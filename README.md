@@ -166,4 +166,4 @@ Issues and pull requests are welcome. If you are proposing a design change, a sc
 
 Solar Harvest is free on the Connect IQ Store and always will be. If it made your watch a little more interesting and you would like to say thanks, you can do that here:
 
-> [Ko-fi/texasbe2trill](Ko-fi.com/texasbe2trill)
+> [Ko-fi/texasbe2trill](https://www.ko-fi.com/texasbe2trill)
