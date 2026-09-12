@@ -1,0 +1,154 @@
+<fitContributions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://developer.garmin.com/downloads/connect-iq/resources.xsd">
+    <!--
+        Chart and label metadata for Garmin Connect. This is the piece the FIT
+        file itself cannot carry: Connect reads chart titles, units and display
+        flags from THIS resource, matched to a field purely by its numeric id -
+        never from the field's name, and never inferred from the data. A field
+        created in FitRecorder.mc with no entry here still records correctly
+        (confirmed repeatedly against real FIT files: originally 11 fields,
+        populated session/lap/record values, clean data - now 14 with the
+        addition of ids 11-13 below), but Connect has no instructions for it
+        and renders nothing. Garmin's own docs state this in as many words:
+        "Field id _must_ match the fitField id in resources or your data
+        will not display."
+
+        Every id below must match a static const ID_* in FitRecorder.mc exactly.
+        They are listed in that same order so the two files can be read side by
+        side; a field added to one without the other is a field that records but
+        never appears on Connect.
+    -->
+
+    <!-- id 0: solar_intensity, RECORD - the live intensity curve. -->
+    <fitField id="0"
+              sortOrder="0"
+              precision="0"
+              displayInChart="true"
+              chartTitle="@Strings.FitSolarIntensity"
+              dataLabel="@Strings.FitSolarIntensity"
+              unitLabel="@Strings.UnitPercent"
+              fillColor="#FFAA00" />
+
+    <!-- id 1: full_sun, SESSION - minutes at full sun for the whole activity. -->
+    <fitField id="1"
+              sortOrder="1"
+              precision="0"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitFullSun"
+              unitLabel="@Strings.UnitMinutes" />
+
+    <!-- id 2: lap_full_sun, LAP - the same figure, per lap. -->
+    <fitField id="2"
+              sortOrder="2"
+              precision="0"
+              displayInActivityLaps="true"
+              dataLabel="@Strings.FitLapFullSun"
+              unitLabel="@Strings.UnitMinutes" />
+
+    <!-- id 3: battery, RECORD - the battery-level curve. -->
+    <fitField id="3"
+              sortOrder="3"
+              precision="0"
+              displayInChart="true"
+              chartTitle="@Strings.FitBattery"
+              dataLabel="@Strings.FitBattery"
+              unitLabel="@Strings.UnitPercent"
+              fillColor="#3399CC" />
+
+    <!-- id 4: avg_solar, SESSION. -->
+    <fitField id="4"
+              sortOrder="4"
+              precision="0"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitAvgSolar"
+              unitLabel="@Strings.UnitPercent" />
+
+    <!-- id 5: peak_solar, SESSION. -->
+    <fitField id="5"
+              sortOrder="5"
+              precision="0"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitPeakSolar"
+              unitLabel="@Strings.UnitPercent" />
+
+    <!-- id 6: time_in_sun, SESSION - share of the activity above the useful
+         elevation threshold. -->
+    <fitField id="6"
+              sortOrder="6"
+              precision="0"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitTimeInSun"
+              unitLabel="@Strings.UnitPercent" />
+
+    <!-- id 7: battery_used, SESSION - float, one decimal reads better than a
+         rounded whole point on a value this small. -->
+    <fitField id="7"
+              sortOrder="7"
+              precision="1"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitBatteryUsed"
+              unitLabel="@Strings.UnitPercent" />
+
+    <!-- id 8: battery_rate, SESSION - the measured drain/gain rate. Null on the
+         watch's own page when nothing has moved yet; absent from the FIT
+         entirely in that case, same as any other unset field. -->
+    <fitField id="8"
+              sortOrder="8"
+              precision="1"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitBatteryRate"
+              unitLabel="@Strings.UnitPercentPerHour" />
+
+    <!-- id 9: solar_saving, SESSION - the fitted offset the sun bought. -->
+    <fitField id="9"
+              sortOrder="9"
+              precision="1"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitSolarSaving"
+              unitLabel="@Strings.UnitPercentPerHour" />
+
+    <!-- id 10: lap_avg_solar, LAP. -->
+    <fitField id="10"
+              sortOrder="10"
+              precision="0"
+              displayInActivityLaps="true"
+              dataLabel="@Strings.FitLapAvgSolar"
+              unitLabel="@Strings.UnitPercent" />
+
+    <!-- id 11: catching_percent, RECORD - share of the light this sun height
+         allows that actually landed. The app's most distinctive metric, and the
+         reason it exists here at all: added after a real recorded activity
+         showed the battery record chart as a flat, thirty-minute single step -
+         honest data, but nothing worth charting. This is always present once
+         there is a fix and the sun clears 15 degrees, independent of whether
+         the battery moved a single point. -->
+    <fitField id="11"
+              sortOrder="11"
+              precision="0"
+              displayInChart="true"
+              chartTitle="@Strings.FitCatching"
+              dataLabel="@Strings.FitCatching"
+              unitLabel="@Strings.UnitPercent"
+              fillColor="#8855CC" />
+
+    <!-- id 12: sun_elevation, RECORD - the sun's height, every second. Smooth
+         and continuous for the whole activity once there is a fix, so it gives
+         Connect a real curve to draw even on the rare activity where solar
+         intensity itself barely moves. -->
+    <fitField id="12"
+              sortOrder="12"
+              precision="0"
+              displayInChart="true"
+              chartTitle="@Strings.FitSunElevation"
+              dataLabel="@Strings.FitSunElevation"
+              unitLabel="@Strings.UnitDegrees"
+              fillColor="#339966" />
+
+    <!-- id 13: projected_hours, SESSION - runtime left at the measured rate,
+         restated as a summary stat so it survives past the activity screen. -->
+    <fitField id="13"
+              sortOrder="13"
+              precision="1"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitProjectedHours"
+              unitLabel="@Strings.UnitHours" />
+</fitContributions>

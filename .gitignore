@@ -1,0 +1,17 @@
+# Connect IQ signing key. This is the private key that identifies you as the
+# publisher: anyone holding it can push updates to your store listing, and it
+# cannot be re-issued for an app already published under it. Never commit it.
+developer_key
+*.der
+*.pem
+
+# Build output
+bin/
+dist/
+*.prg
+*.prg.debug.xml
+*.iq
+
+.DS_Store
+__pycache__/
+*.pyc

@@ -1,0 +1,30 @@
+<settings>
+    <setting propertyKey="@Properties.theme" title="@Strings.SettingTheme">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.ThemeAuto</listEntry>
+            <listEntry value="1">@Strings.ThemeDark</listEntry>
+            <listEntry value="2">@Strings.ThemeLight</listEntry>
+        </settingConfig>
+    </setting>
+    <setting propertyKey="@Properties.pageMode" title="@Strings.SettingPage">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.PageAuto</listEntry>
+            <listEntry value="1">@Strings.PageNow</listEntry>
+            <listEntry value="2">@Strings.PageTrend</listEntry>
+            <listEntry value="3">@Strings.PageHarvest</listEntry>
+            <listEntry value="4">@Strings.PageZones</listEntry>
+            <listEntry value="5">@Strings.PageSky</listEntry>
+            <listEntry value="6">@Strings.PageBonus</listEntry>
+            <listEntry value="7">@Strings.PageCompass</listEntry>
+        </settingConfig>
+    </setting>
+    <setting propertyKey="@Properties.lapPaging" title="@Strings.SettingLapPaging">
+        <settingConfig type="boolean" />
+    </setting>
+    <setting propertyKey="@Properties.alerts" title="@Strings.SettingAlerts">
+        <settingConfig type="boolean" />
+    </setting>
+    <setting propertyKey="@Properties.cycleSeconds" title="@Strings.SettingCycle">
+        <settingConfig type="numeric" min="3" max="60" />
+    </setting>
+</settings>

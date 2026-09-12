@@ -1,0 +1,7 @@
+<properties>
+    <property id="theme" type="number">0</property>
+    <property id="pageMode" type="number">0</property>
+    <property id="cycleSeconds" type="number">8</property>
+    <property id="lapPaging" type="boolean">false</property>
+    <property id="alerts" type="boolean">true</property>
+</properties>

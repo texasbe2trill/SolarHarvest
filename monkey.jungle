@@ -1,0 +1,18 @@
+project.manifest = manifest.xml
+
+# Every supported product is a round MIP fenix-family solar watch, so there is no
+# longer a 1-bit build variant and the palette is a single colour implementation.
+
+# The fenix 7 generation runs Connect IQ 5.2.0. onTimerLap2 and its LapInfoType
+# arrived in 5.2.2, so the symbol has to be compiled out for exactly these
+# products; they take lap events through plain onTimerLap instead, which is the
+# only callback their firmware raises.
+fenix7.excludeAnnotations = lap2
+fenix7pro.excludeAnnotations = lap2
+fenix7pronowifi.excludeAnnotations = lap2
+fenix7s.excludeAnnotations = lap2
+fenix7spro.excludeAnnotations = lap2
+fenix7x.excludeAnnotations = lap2
+fenix7xpro.excludeAnnotations = lap2
+fenix7xpronowifi.excludeAnnotations = lap2
+fr955.excludeAnnotations = lap2
