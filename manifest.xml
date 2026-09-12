@@ -5,7 +5,7 @@
         Use "Monkey C: Edit Application" from the Visual Studio Code command palette
         to update the application attributes.
     -->
-    <iq:application id="29948ba9-bcb1-44d5-a146-6becc2286781" type="datafield" name="@Strings.AppName" entry="SolarPowerApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="5.2.0">
+    <iq:application id="4e5bbada-9a35-433a-a183-8f8f7bbed72a" type="datafield" name="@Strings.AppName" entry="SolarPowerApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="5.2.0">
         <!--
             Use the following from the Visual Studio Code comand palette to edit
             the build targets:
@@ -31,20 +31,20 @@
             <iq:product id="fenix7x"/>
             <iq:product id="fenix7xpro"/>
             <iq:product id="fenix7xpronowifi"/>
-            <iq:product id="fr955"/>
             <iq:product id="fenix8solar47mm"/>
             <iq:product id="fenix8solar51mm"/>
             <iq:product id="fenix9prosolar47mm"/>
             <iq:product id="fenix9prosolar51mm"/>
+            <iq:product id="fr955"/>
         </iq:products>
         <!--
             Use "Monkey C: Edit Permissions" from the Visual Studio Code command
             palette to update permissions.
         -->
         <iq:permissions>
+            <iq:uses-permission id="DataFieldAlert"/>
             <iq:uses-permission id="FitContributor"/>
             <iq:uses-permission id="Positioning"/>
-            <iq:uses-permission id="DataFieldAlert"/>
         </iq:permissions>
         <!--
             Use "Monkey C: Edit Languages" from the Visual Studio Code command

@@ -166,6 +166,4 @@ Issues and pull requests are welcome. If you are proposing a design change, a sc
 
 Solar Harvest is free on the Connect IQ Store and always will be. If it made your watch a little more interesting and you would like to say thanks, you can do that here:
 
-> **[TODO: add your GitHub Sponsors link here, e.g. `https://github.com/sponsors/your-username`]**
-
-A `.github/FUNDING.yml` is already wired up, edit it with your username (or your Ko-fi, Buy Me a Coffee, whatever you actually use) and GitHub will show a "Sponsor" button on this repo automatically.
+> [Ko-fi/texasbe2trill](Ko-fi.com/texasbe2trill)
