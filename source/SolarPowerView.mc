@@ -1299,18 +1299,19 @@ class SolarPowerView extends WatchUi.DataField {
                         var c0 = fromCompass + ((sweep * i) / dashes);
                         var c1 = fromCompass + ((sweep * (i + 0.6)) / dashes);
                         var d0 = ringAngle(c0 - offset);
-                        var d1 = ringAngle(c1 - offset);
-                        // ARC_CLOCKWISE sweeps through DECREASING drawing angle
-                        // from start to end (confirmed by the sun wedge above,
-                        // which passes its larger bound first) - increasing
-                        // compass bearing maps to decreasing drawing angle
-                        // through ringAngle's reflection, so d0 (from the
-                        // earlier, smaller compass angle) is the larger drawing
-                        // angle and belongs first. Reversed, each "dash" swept
-                        // almost the whole circle the long way round instead of
-                        // the short way across itself, which is what turned
-                        // eight small dashes into one solid ring.
-                        dc.drawArc(cx, cy, sr, Graphics.ARC_CLOCKWISE, d0, (d1 + 1) % 360);
+                        // The end angle is derived from d0 and the real span
+                        // between c0 and c1, never from wrapping c1 on its own.
+                        // ringAngle's reflection has its own wrap point (where
+                        // compassDeg - offset crosses 90), and offset is a live
+                        // heading that can put that point anywhere - when it
+                        // lands inside one dash's own tiny span, wrapping c0 and
+                        // c1 independently can send them to opposite sides of
+                        // 0/360 and round to the same degree, and a drawArc
+                        // whose start equals its end draws a full circle instead
+                        // of a sliver. Deriving the end from d0 by a fixed span
+                        // can never collide with itself this way.
+                        dc.drawArc(cx, cy, sr, Graphics.ARC_CLOCKWISE, d0,
+                            ringArcEnd(d0, (c1 - c0).toNumber()));
                     }
                 }
             }
@@ -1348,6 +1349,23 @@ class SolarPowerView extends WatchUi.DataField {
             a -= 360.0;
         }
         return a.toNumber();
+    }
+
+    // ARC_CLOCKWISE's end angle, `spanDeg` around from `start`. Static so a
+    // test can sweep it directly without rendering a whole compass frame - the
+    // one thing that actually matters here, the result never equalling
+    // `start`, is exactly what a render test that only checks "did this throw"
+    // cannot catch: a degenerate arc and a correct tiny one look identical to it.
+    static function ringArcEnd(start as Number, spanDeg as Number) as Number {
+        var span = spanDeg;
+        if (span < 1) {
+            span = 1;
+        }
+        var end = start - span;
+        while (end < 0) {
+            end += 360;
+        }
+        return end;
     }
 
     // What the dial reports on each page. Showing live solar on all four made

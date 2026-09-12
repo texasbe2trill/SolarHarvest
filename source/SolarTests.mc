@@ -1329,6 +1329,26 @@ function testCompassAndSkyAcrossADenseSweepOfTimes(logger as Logger) as Boolean 
     return true;
 }
 
+// The compass ring's dotted future-sweep is built from small per-dash arcs,
+// each one wrapping its own start and end angle into drawing space
+// independently. The render test above proves every heading renders without
+// throwing, but a degenerate arc (start and end landing on the same wrapped
+// degree, which draws as a full circle instead of a sliver) throws nothing -
+// it just draws the wrong thing, invisible to a "did this crash" check. This
+// shipped, and a full circle appeared on a real watch during a real activity.
+(:test)
+function testRingArcEndNeverCollapsesToItsOwnStart(logger as Logger) as Boolean {
+    for (var start = 0; start < 360; start += 1) {
+        for (var span = 0; span <= 3; span += 1) {
+            var end = SolarPowerView.ringArcEnd(start, span);
+            Test.assertMessage(end != start,
+                "start=" + start.format("%d") + " span=" + span.format("%d")
+                    + " must not collapse to its own start (draws a full circle instead of a sliver)");
+        }
+    }
+    return true;
+}
+
 (:test)
 function testBatteryIconAcrossExtremeLevelsAndFlows(logger as Logger) as Boolean {
     // Every combination the icon's drawing code branches on: empty, full, and a
