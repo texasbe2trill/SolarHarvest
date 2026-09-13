@@ -110,6 +110,9 @@ class SolarPowerView extends WatchUi.DataField {
     private var _pageMode as Number = 0;
     private var _cycleSeconds as Number = 8;
     private var _lapPaging as Boolean = false;
+    // Lap harvest seconds the lap callback last wrote into the FIT fields. Only
+    // FitRecorder reads the fields themselves, and it cannot run in a unit test.
+    private var _lapFieldSeconds as Number = 0;
     private var _manualPage as Number = 0;
     // Zone-label height, measured once per layout.
     private var _zoneLabelH as Number = 0;
@@ -175,6 +178,12 @@ class SolarPowerView extends WatchUi.DataField {
 
     function manualPageForTest() as Number {
         return _manualPage;
+    }
+
+    // What the lap callback left in the FIT lap fields, which is what the next
+    // lap record captures if it closes before compute() refreshes them.
+    function lapFieldSecondsForTest() as Number {
+        return _lapFieldSeconds;
     }
 
     // Without a fix the sun geometry short-circuits, so a benchmark that never
@@ -432,7 +441,7 @@ class SolarPowerView extends WatchUi.DataField {
     // that is supposed to be a convenience.
     (:lap2)
     function onTimerLap2(trigger as DataField.LapInfoType) as Boolean {
-        handleLap(trigger[:lapTrigger] == DataField.LAP_TRIGGER_MANUAL);
+        handleLap(trigger[:lapTrigger] == DataField.LAP_TRIGGER_MANUAL, true);
         return true;
     }
 
@@ -440,18 +449,42 @@ class SolarPowerView extends WatchUi.DataField {
     // tell a button press from an auto-lap here. Treating every lap as manual
     // is the same behaviour this app always had before the distinction existed
     // above, not a regression - just the best available answer on older devices.
+    //
+    // Nor does this callback promise when the lap record is written, so it keeps
+    // pushing the finished lap before the reset, in case firmware reads the
+    // fields only after it returns.
     function onTimerLap() as Void {
-        handleLap(true);
+        handleLap(true, false);
     }
 
-    private function handleLap(manual as Boolean) as Void {
+    // `recordWritten` is true when the firmware has already written the lap
+    // record, which onTimerLap2 guarantees.
+    //
+    // In that case the finished lap is already on disk, and pushing its totals
+    // back into the live fields does nothing for it but leave them there until
+    // the next compute(). Anything that closes before that refresh inherits
+    // them: a structured workout's last step ending moments before the stop
+    // gave a three second final lap the previous step's three minutes. So the
+    // fields are pushed after the reset instead, and hold the new, empty lap
+    // from the moment the callback returns.
+    private function handleLap(manual as Boolean, recordWritten as Boolean) as Void {
+        if (!recordWritten) {
+            pushLapFields();
+        }
+        _model.noteLap();
+        if (recordWritten) {
+            pushLapFields();
+        }
+        if (_lapPaging && manual) {
+            _manualPage = (_manualPage + 1) % PAGE_COUNT;
+        }
+    }
+
+    private function pushLapFields() as Void {
+        _lapFieldSeconds = _model.lapHarvestSeconds();
         var fit = _fit;
         if (fit != null) {
             fit.updateLap(_model);
-        }
-        _model.noteLap();
-        if (_lapPaging && manual) {
-            _manualPage = (_manualPage + 1) % PAGE_COUNT;
         }
     }
 

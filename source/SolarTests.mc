@@ -1236,6 +1236,72 @@ function testLapPagingOffLeavesThePageAlone(logger as Logger) as Boolean {
     return true;
 }
 
+// The end of a structured workout: the last step closes on a TIME trigger, the
+// watch shows Workout Complete, and the wearer stops a couple of seconds later.
+// The session-end lap is written from whatever the lap fields hold at that
+// moment. They used to still hold the finished step's totals, so a three
+// second final lap reported the previous step's three minutes of sun.
+(:lap2, :test)
+function testLap2LeavesTheNewEmptyLapInTheFields(logger as Logger) as Boolean {
+    gSkipFitRecording = true;
+    var view = new SolarPowerView();
+    for (var t = 0; t < 230; t++) {
+        view.addSampleForTest(100, 84.0);
+    }
+    Test.assertEqualMessage(view.lapHarvestSecondsForTest(), 230,
+        "the final step accumulated 230 seconds of full sun");
+
+    view.onTimerLap2({ :lapTrigger => DataField.LAP_TRIGGER_TIME });
+    logger.debug("after the step closed, lap fields hold " + view.lapFieldSecondsForTest().format("%d") + "s");
+    Test.assertEqualMessage(view.lapFieldSecondsForTest(), 0,
+        "the fields must hold the new empty lap, not the finished step's 230 seconds");
+
+    // No compute() between the two closures: the stop lands first.
+    view.onTimerLap2({ :lapTrigger => DataField.LAP_TRIGGER_SESSION_END });
+    Test.assertEqualMessage(view.lapFieldSecondsForTest(), 0,
+        "the session-end lap must not inherit anything from the step before it");
+    return true;
+}
+
+// Every trigger takes the same path. The record is written before the callback
+// whatever closed the lap, so none of them may leave the finished lap behind.
+(:lap2, :test)
+function testLap2ClearsTheFieldsForEveryTrigger(logger as Logger) as Boolean {
+    gSkipFitRecording = true;
+    var view = new SolarPowerView();
+    var triggers = [DataField.LAP_TRIGGER_MANUAL, DataField.LAP_TRIGGER_DISTANCE,
+                    DataField.LAP_TRIGGER_TIME, DataField.LAP_TRIGGER_POSITION_LAP,
+                    DataField.LAP_TRIGGER_SESSION_END];
+    for (var i = 0; i < triggers.size(); i++) {
+        for (var t = 0; t < 90; t++) {
+            view.addSampleForTest(100, 84.0);
+        }
+        view.onTimerLap2({ :lapTrigger => triggers[i] });
+        Test.assertEqualMessage(view.lapFieldSecondsForTest(), 0,
+            "trigger index " + i.format("%d") + " left the finished lap in the fields");
+    }
+    return true;
+}
+
+// The legacy callback makes no promise about when the record is written, so it
+// must still push the finished lap before resetting, for firmware that reads
+// the fields only after the callback returns. The per-lap tests above already
+// prove the accumulator resets on this path.
+(:test)
+function testLegacyLapKeepsTheFinishedLapInTheFields(logger as Logger) as Boolean {
+    gSkipFitRecording = true;
+    var view = new SolarPowerView();
+    for (var t = 0; t < 120; t++) {
+        view.addSampleForTest(100, 84.0);
+    }
+    view.onTimerLap();
+    Test.assertEqualMessage(view.lapFieldSecondsForTest(), 120,
+        "the finished lap's 120 seconds must be in the fields when the callback returns");
+    Test.assertEqualMessage(view.lapHarvestSecondsForTest(), 0,
+        "and the accumulator must still start the next lap from zero");
+    return true;
+}
+
 (:test)
 function testSunPathArcIsADomeNotAStub(logger as Logger) as Boolean {
     // The sky view plots elevation against bearing. That only reads as a sun
