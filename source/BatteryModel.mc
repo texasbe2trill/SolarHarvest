@@ -119,13 +119,28 @@ class BatteryModel {
 
     // One reading per second. Pass battery < 0 when the level is unknown.
     function addSample(intensity as Number, battery as Float, charging as Boolean) as Void {
+        addSampleWhen(intensity, battery, charging, true);
+    }
+
+    // `recording` is false before the timer starts and while it is paused.
+    //
+    // The level itself still tracks the watch in that state, so the battery page
+    // reads correctly the moment the field is on screen. Nothing that measures
+    // this activity does: a rate fitted across a twenty minute cafe stop is not
+    // this activity's drain rate, and the seconds spent waiting for a GPS lock
+    // are not seconds this activity spent in the sun.
+    function addSampleWhen(intensity as Number, battery as Float, charging as Boolean,
+                           recording as Boolean) as Void {
         if (battery < 0.0) {
             return;
         }
         _charging = charging;
+        _level = battery;
+        if (!recording) {
+            return;
+        }
 
-        if (_level < 0.0) {
-            _level = battery;
+        if (_start < 0.0) {
             _start = battery;
             _prev = battery;
             _stable = battery;
@@ -138,7 +153,6 @@ class BatteryModel {
             _quantum = step;
         }
         _prev = battery;
-        _level = battery;
 
         if (charging) {
             // Charging is a different regime; abandon any run in progress rather

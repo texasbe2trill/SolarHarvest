@@ -60,6 +60,8 @@ class SolarPowerView extends WatchUi.DataField {
     private var _sunset as Number = -1;
     private var _sunTick as Number = 0;
     private var _charging as Boolean = false;
+    // Whether the activity timer was running at the last compute().
+    private var _recording as Boolean = true;
     private var _daysLeft as Float = -1.0;
 
     // Sun geometry and weather. Both are refreshed on the slow tick: the sun
@@ -155,6 +157,12 @@ class SolarPowerView extends WatchUi.DataField {
     // registers a method as a test case in its own right.
     function addSampleForTest(intensity as Number, battery as Float) as Void {
         _model.addSample(intensity, battery, false);
+    }
+
+    // A sample taken while the timer was stopped or paused, which is what
+    // compute() delivers before the wearer presses start and during every break.
+    function addPausedSampleForTest(intensity as Number, battery as Float) as Void {
+        _model.addSampleWhen(intensity, battery, false, false);
     }
 
     function setPageForTest(page as Number) as Void {
@@ -268,6 +276,26 @@ class SolarPowerView extends WatchUi.DataField {
 
     // -- activity lifecycle -----------------------------------------------
 
+    // Whether the activity timer is actually running.
+    //
+    // compute() is called about once a second from the moment the field is on
+    // screen, which is well before the wearer presses start and right through
+    // every pause, but the FIT only receives records while the timer runs.
+    // Anything that accumulates into this activity's own numbers has to agree
+    // with that or the summary describes a longer, different activity than the
+    // chart beside it does.
+    //
+    // Feature-detected: timerState is old enough to be on every supported
+    // device, but a field that stops measuring because an optional property
+    // came back null would be a far worse failure than one that measures a
+    // little too eagerly, so an unreadable state is treated as running.
+    private function isRecording(info as Activity.Info) as Boolean {
+        if (!(info has :timerState) || info.timerState == null) {
+            return true;
+        }
+        return info.timerState == Activity.TIMER_STATE_ON;
+    }
+
     function compute(info as Activity.Info) as Void {
         var stats = System.getSystemStats();
         var intensity = readIntensity(stats);
@@ -278,7 +306,8 @@ class SolarPowerView extends WatchUi.DataField {
         _hasSolar = true;
         _charging = stats.charging;
         _daysLeft = readDaysLeft(stats);
-        _model.addSample(intensity, stats.battery, _charging);
+        _recording = isRecording(info);
+        _model.addSampleWhen(intensity, stats.battery, _charging, _recording);
 
         var fit = _fit;
         if (fit != null) {
@@ -326,11 +355,15 @@ class SolarPowerView extends WatchUi.DataField {
 
     // Raise at most one alert per second, and only while the timer is running.
     //
+    // The timer check is the point of the second condition: without it an alert
+    // can fire while the wearer is still standing at the trailhead waiting for
+    // a GPS lock, about an activity that has not started.
+    //
     // Wrapped in its own try/catch: showAlert is not on every device this builds
     // for, and an alert is a courtesy - it must never be the reason a data field
     // stops drawing.
     private function maybeAlert() as Void {
-        if (!_alertsOn || gSkipFitRecording) {
+        if (!_alertsOn || gSkipFitRecording || !_recording) {
             return;
         }
         var toSunset = 0;

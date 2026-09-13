@@ -25,6 +25,9 @@ class SolarModel {
 
     private var _samplePeriod as Number = 5;
     private var _smooth as Float = 0.0;
+    // Whether _smooth holds a real reading yet. Separate from _ticks, which
+    // only counts samples taken while the timer was actually running.
+    private var _primed as Boolean = false;
 
     private var _history as Array<Number>;
     private var _head as Number = 0;
@@ -93,6 +96,7 @@ class SolarModel {
         _slope = 0.0;
         _slopeStale = true;
         _smooth = 0.0;
+        _primed = false;
         _batHead = 0;
         _batCount = 0;
         _batBucket = 0;
@@ -101,12 +105,34 @@ class SolarModel {
 
     // One reading per second. Pass battery < 0 when the level is unknown.
     function addSample(intensity as Number, battery as Float, charging as Boolean) as Void {
+        addSampleWhen(intensity, battery, charging, true);
+    }
+
+    // `recording` is false before the timer starts and while it is paused.
+    //
+    // compute() runs about once a second the whole time the field is on screen,
+    // which includes the wait for a GPS lock and every pause, but the FIT only
+    // gets records while the timer runs. Accumulating in those gaps put samples
+    // into the session summary that the chart beside it could never show: a
+    // "time in sun" that counted a minute spent indoors before the start, and an
+    // average pulled toward whatever the watch happened to see while it sat on a
+    // cafe table. The live reading still updates, because a paused field showing
+    // a frozen number looks broken.
+    function addSampleWhen(intensity as Number, battery as Float, charging as Boolean,
+                           recording as Boolean) as Void {
         var v = clamp(intensity);
         _current = v;
-        if (_ticks <= 0) {
+        if (!_primed) {
             _smooth = v.toFloat();
+            _primed = true;
         } else {
             _smooth += (v - _smooth) / SMOOTH_DIVISOR;
+        }
+        if (!recording) {
+            // Still let the battery see it, so the level on the page is the
+            // watch's real level rather than the last one before the pause.
+            updateBattery(v, battery, charging, false);
+            return;
         }
         _ticks += 1;
         if (v > _peak) {
@@ -127,7 +153,7 @@ class SolarModel {
             _bucketTicks = 0;
         }
 
-        updateBattery(v, battery, charging);
+        updateBattery(v, battery, charging, true);
     }
 
     function noteLap() as Void {
@@ -337,12 +363,21 @@ class SolarModel {
 
     // -- internals --------------------------------------------------------
 
-    private function updateBattery(intensity as Number, battery as Float, charging as Boolean) as Void {
+    private function updateBattery(intensity as Number, battery as Float, charging as Boolean,
+                                   recording as Boolean) as Void {
         if (battery < 0.0) {
             return;
         }
-        var seeding = !_battery.hasLevel();
-        _battery.addSample(intensity, battery, charging);
+        // Seed on the first sample that reaches the trace, not the first the
+        // watch reports: the level is read before the timer starts, so
+        // hasLevel() is already true by the time recording begins.
+        var seeding = (_batCount == 0);
+        _battery.addSampleWhen(intensity, battery, charging, recording);
+        if (!recording) {
+            // The level is live for the page to read; the trace behind it is
+            // this activity's own history and stays where the timer left it.
+            return;
+        }
         if (seeding) {
             pushBattery(battery);
             return;

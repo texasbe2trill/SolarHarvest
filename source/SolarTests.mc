@@ -540,6 +540,103 @@ function testFormatSigned(logger as Logger) as Boolean {
     return true;
 }
 
+// -- timer gating ------------------------------------------------------------
+//
+// compute() runs about once a second from the moment the field appears, which
+// is before the timer starts and right through every pause, but records only
+// reach the FIT while it runs. Every number below was previously accumulated in
+// those gaps, so the session summary described an activity the chart beside it
+// never showed.
+
+(:test)
+function testPausedSamplesStayOutOfTheSessionSummary(logger as Logger) as Boolean {
+    var model = new SolarModel(5);
+    // Ten minutes in the dark waiting for a GPS lock, then ten in full sun.
+    for (var i = 0; i < 600; i++) {
+        model.addSampleWhen(0, 80.0, false, false);
+    }
+    for (var i = 0; i < 600; i++) {
+        model.addSampleWhen(100, 80.0, false, true);
+    }
+    logger.debug("after 600 paused dark + 600 running sun: avg=" + model.average().format("%d")
+        + " peak=" + model.peak().format("%d") + " ticks=" + model.ticks().format("%d")
+        + " sunFraction=" + model.sunFraction().format("%.2f"));
+    Test.assertEqualMessage(model.ticks(), 600,
+        "only the running samples may be counted");
+    Test.assertEqualMessage(model.average(), 100,
+        "the average must describe the recorded activity, not the wait before it");
+    Test.assertMessage((model.sunFraction() - 1.0).abs() < 0.0001,
+        "time in sun must be 100%, got " + model.sunFraction().format("%.3f"));
+    Test.assertEqualMessage(model.harvestSeconds(), 600,
+        "harvest must count only the running seconds");
+    return true;
+}
+
+(:test)
+function testPausedSamplesCannotSetThePeak(logger as Logger) as Boolean {
+    // A watch left face-up on a cafe table reads full sun. That is not this
+    // activity's peak, and before the timer gate it silently became one.
+    var model = new SolarModel(5);
+    for (var i = 0; i < 60; i++) {
+        model.addSampleWhen(100, 80.0, false, false);
+    }
+    for (var i = 0; i < 60; i++) {
+        model.addSampleWhen(30, 80.0, false, true);
+    }
+    Test.assertEqualMessage(model.peak(), 30,
+        "a paused reading must not become the session peak");
+    return true;
+}
+
+(:test)
+function testPausedSamplesStillUpdateTheLiveReading(logger as Logger) as Boolean {
+    // The other half of the deal: a paused field that freezes its live number
+    // looks broken, so the display keeps tracking even though nothing counts.
+    var model = new SolarModel(5);
+    for (var i = 0; i < 120; i++) {
+        model.addSampleWhen(80, 77.0, false, false);
+    }
+    logger.debug("paused-only: current=" + model.current().format("%d")
+        + " smoothed=" + model.smoothed().format("%d")
+        + " battery=" + model.batteryPercent().format("%.1f")
+        + " ticks=" + model.ticks().format("%d"));
+    Test.assertEqualMessage(model.current(), 80,
+        "the live reading must follow the sensor while paused");
+    Test.assertMessage(model.smoothed() > 70,
+        "the smoothed reading must converge while paused, got " + model.smoothed().format("%d"));
+    Test.assertMessage((model.batteryPercent() - 77.0).abs() < 0.0001,
+        "the battery level must stay live while paused, got " + model.batteryPercent().format("%.1f"));
+    Test.assertEqualMessage(model.ticks(), 0,
+        "none of that may count as activity time");
+    return true;
+}
+
+(:test)
+function testPausedSecondsDoNotDiluteTheDrainRate(logger as Logger) as Boolean {
+    // A measured rate is percent per hour of RUNNING time. Folding a long pause
+    // into the denominator reports a drain far gentler than the one the wearer
+    // is actually living with.
+    var running = new SolarModel(5);
+    var paused = new SolarModel(5);
+    var level = 100.0;
+    for (var i = 0; i < 3600; i++) {
+        level -= 4.0 / 3600.0;
+        running.addSampleWhen(0, level, false, true);
+        paused.addSampleWhen(0, level, false, true);
+        // The paused model also sits through a matching second of break time.
+        paused.addSampleWhen(0, level, false, false);
+    }
+    var a = running.netFlowPerHour();
+    var b = paused.netFlowPerHour();
+    Test.assertMessage(a != null && b != null, "both models must have measured a rate");
+    logger.debug("drain with no pause=" + a.format("%.2f") + "%/h, with an equal pause="
+        + b.format("%.2f") + "%/h");
+    Test.assertMessage((a - b).abs() < 0.01,
+        "an equal amount of paused time must not change the measured rate: "
+            + a.format("%.2f") + " vs " + b.format("%.2f"));
+    return true;
+}
+
 // -- battery estimator -----------------------------------------------------
 //
 // Real hardware reports the battery level quantised to whole percent and the
