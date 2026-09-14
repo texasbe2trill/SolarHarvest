@@ -5,7 +5,7 @@
         Use "Monkey C: Edit Application" from the Visual Studio Code command palette
         to update the application attributes.
     -->
-    <iq:application id="4e5bbada-9a35-433a-a183-8f8f7bbed72a" type="datafield" name="@Strings.AppName" entry="SolarPowerApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="5.2.0">
+    <iq:application id="4e5bbada-9a35-433a-a183-8f8f7bbed72a" type="datafield" name="@Strings.AppName" entry="SolarPowerApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="3.4.0">
         <!--
             Use the following from the Visual Studio Code comand palette to edit
             the build targets:
@@ -15,14 +15,19 @@
         -->
         <iq:products>
             <!--
-                Every product here is a round MIP solar watch. The fenix 7 tier
-                runs Connect IQ 5.2.0 rather than 6.0.2, which is why the manifest
-                floor sits there: it is the whole fenix 7 / 7 Pro / Enduro 2 /
-                tactix 7 / quatix 7X / FR955 generation, all of it solar, all of it
-                the same 240-280px MIP glass this field is already drawn for, and
-                with twice the data-field memory of the newer devices.
+                Every product here is a round MIP solar watch. The manifest floor
+                is Connect IQ 3.4, for the fenix 6 Pro / 6S Pro / 6X Pro
+                generation (including their Solar, tactix Delta Solar and quatix
+                6X Solar editions): the same 240-280px MIP glass this field is
+                already drawn for, with a 131072-byte data-field limit. The plain
+                fenix 6 and 6S Solar are not here because theirs is 32768. The
+                fenix 7 / 7 Pro / Enduro 2 / tactix 7 / quatix 7X / FR955
+                generation runs 5.2.0, and everything newer 6.0.2.
             -->
             <iq:product id="enduro3"/>
+            <iq:product id="fenix6pro"/>
+            <iq:product id="fenix6spro"/>
+            <iq:product id="fenix6xpro"/>
             <iq:product id="fenix7"/>
             <iq:product id="fenix7pro"/>
             <iq:product id="fenix7pronowifi"/>

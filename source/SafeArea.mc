@@ -1,5 +1,6 @@
 import Toybox.Lang;
 import Toybox.Math;
+import Toybox.WatchUi;
 
 // Maps the data field rectangle onto the physical screen so text is never drawn
 // under the bezel, in any field layout - not just full screen.
@@ -26,10 +27,15 @@ class SafeArea {
     function initialize() {
     }
 
+    // The obscurity bits are read from DataField rather than passed in: they are
+    // constants, and Connect IQ 3.4 (the fenix 6 generation) rejects any method
+    // with more than nine parameters.
     function configure(round as Boolean, screenW as Number, screenH as Number,
-                       fieldW as Number, fieldH as Number, flags as Number,
-                       obscureTop as Number, obscureBottom as Number,
-                       obscureLeft as Number, obscureRight as Number) as Void {
+                       fieldW as Number, fieldH as Number, flags as Number) as Void {
+        var obscureTop = WatchUi.DataField.OBSCURE_TOP;
+        var obscureBottom = WatchUi.DataField.OBSCURE_BOTTOM;
+        var obscureLeft = WatchUi.DataField.OBSCURE_LEFT;
+        var obscureRight = WatchUi.DataField.OBSCURE_RIGHT;
         _round = round;
         _fieldW = fieldW;
         _screenCx = screenW / 2;

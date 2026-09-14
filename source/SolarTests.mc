@@ -352,15 +352,14 @@ function testLayoutHeroStaysCentered(logger as Logger) as Boolean {
 
 // -- safe area -------------------------------------------------------------
 
-// Flag values mirror DataField.OBSCURE_*; the class takes them as parameters so
-// the geometry can be tested without a live data field.
-const T_TOP = 1;
-const T_LEFT = 2;
-const T_BOTTOM = 4;
-const T_RIGHT = 8;
+// Short names for DataField.OBSCURE_*, which SafeArea reads directly.
+const T_TOP = WatchUi.DataField.OBSCURE_TOP;
+const T_LEFT = WatchUi.DataField.OBSCURE_LEFT;
+const T_BOTTOM = WatchUi.DataField.OBSCURE_BOTTOM;
+const T_RIGHT = WatchUi.DataField.OBSCURE_RIGHT;
 
 function configureArea(area as SafeArea, round as Boolean, fieldH as Number, flags as Number) as Void {
-    area.configure(round, 280, 280, 280, fieldH, flags, T_TOP, T_BOTTOM, T_LEFT, T_RIGHT);
+    area.configure(round, 280, 280, 280, fieldH, flags);
 }
 
 (:test)
@@ -898,14 +897,23 @@ function testFormatFlow(logger as Logger) as Boolean {
 // arithmetic on widths and heights that shrink with the field size, so a
 // division or an array index going wrong only ever shows up at a specific size.
 
-function renderAt(view as SolarPowerView, width as Number, height as Number) as Boolean {
-    var buffer = null;
+// An off-screen bitmap on every tier. createBufferedBitmap arrived in Connect IQ
+// 4.0 and hands back a reference; the fenix 6 generation only has the
+// constructor.
+function offscreenBitmap(width as Number, height as Number) {
+    var options = { :width => width, :height => height };
     if (Graphics has :createBufferedBitmap) {
-        buffer = Graphics.createBufferedBitmap({ :width => width, :height => height });
+        var buffer = Graphics.createBufferedBitmap(options);
         if (buffer != null && buffer has :get) {
             buffer = buffer.get();
         }
+        return buffer;
     }
+    return new Graphics.BufferedBitmap(options);
+}
+
+function renderAt(view as SolarPowerView, width as Number, height as Number) as Boolean {
+    var buffer = offscreenBitmap(width, height);
     if (buffer == null) {
         return false;
     }
@@ -1376,7 +1384,7 @@ function testSunPathArcIsADomeNotAStub(logger as Logger) as Boolean {
 // battery icon, which needs no forward extrapolation: direction is shown live,
 // from the same measured rate the RATE chip already displays.
 
-(:test)
+(:test, :codeOutsideHeap)
 function testMemoryHeadroomIsHealthy(logger as Logger) as Boolean {
     // The number that actually matters for "will this fit on every device it
     // ships to": live heap usage against this device's own declared datafield
@@ -1386,10 +1394,7 @@ function testMemoryHeadroomIsHealthy(logger as Logger) as Boolean {
     gSkipFitRecording = true;
     var view = new SolarPowerView();
     view.setFixForTest(TEST_LAT_RAD, TEST_LON_RAD);
-    var buffer = Graphics.createBufferedBitmap({ :width => 280, :height => 280 });
-    if (buffer != null && buffer has :get) {
-        buffer = buffer.get();
-    }
+    var buffer = offscreenBitmap(280, 280);
     if (buffer != null) {
         var dc = buffer.getDc();
         for (var page = 0; page < 7; page++) {
@@ -1415,6 +1420,35 @@ function testMemoryHeadroomIsHealthy(logger as Logger) as Boolean {
     Test.assertMessage(used < limit,
         "used memory must stay under the smallest limit this build targets, got "
             + used.format("%d") + " of " + limit.format("%d"));
+    return true;
+}
+
+(:test, :codeInHeap)
+function testFieldDataFitsBesideItsCodeOnTheFenix6(logger as Logger) as Boolean {
+    // On the fenix 6 generation the heap reading includes the loaded code, and
+    // a unit-test build carries every test as well, so the check above reads
+    // far past the 131072-byte limit whatever the field does. What a test can
+    // still see here is the field's own data: everything it holds once built,
+    // fed six hours of activity and drawn on every page at every size. That
+    // measured under 4 KB when written, beside a release build that idles at
+    // 59.8 of 124.4 kB there, so the budget below allows four times the growth
+    // before it fails. The production build as a whole is measured in the
+    // simulator instead.
+    gSkipFitRecording = true;
+    var before = System.getSystemStats().usedMemory;
+    var view = new SolarPowerView();
+    view.setClockForTest(SOLAR_NOON_UTC);
+    view.setFixForTest(TEST_LAT_RAD, TEST_LON_RAD);
+    feedViewActivity(view, 0, 21600);
+    for (var page = 0; page < 7; page++) {
+        view.setPageForTest(page);
+        renderAt(view, 280, 280);
+        renderAt(view, 260, 260);
+        renderAt(view, 240, 240);
+    }
+    var held = System.getSystemStats().usedMemory - before;
+    logger.debug("field data: " + held.format("%d") + " bytes");
+    Test.assertMessage(held < 16384, "field data must stay small, got " + held.format("%d"));
     return true;
 }
 
@@ -1872,10 +1906,7 @@ function testFrameCostIsReasonable(logger as Logger) as Boolean {
         level -= 0.01;
         view.addSampleForTest(trace[i], level);
     }
-    var buffer = Graphics.createBufferedBitmap({ :width => 280, :height => 280 });
-    if (buffer != null && buffer has :get) {
-        buffer = buffer.get();
-    }
+    var buffer = offscreenBitmap(280, 280);
     if (buffer == null) {
         logger.debug("no off-screen buffer available; cost not measured");
         return true;

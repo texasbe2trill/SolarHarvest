@@ -2198,9 +2198,7 @@ class SolarPowerView extends WatchUi.DataField {
         var all = DataField.OBSCURE_TOP | DataField.OBSCURE_BOTTOM
             | DataField.OBSCURE_LEFT | DataField.OBSCURE_RIGHT;
         _fullScreen = ((flags & all) == all);
-        _safe.configure(_round, _screenW, _screenH, w, h, flags,
-            DataField.OBSCURE_TOP, DataField.OBSCURE_BOTTOM,
-            DataField.OBSCURE_LEFT, DataField.OBSCURE_RIGHT);
+        _safe.configure(_round, _screenW, _screenH, w, h, flags);
     }
 
     // Local clock time, in the user's own 12 or 24 hour preference.

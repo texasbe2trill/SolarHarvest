@@ -79,7 +79,7 @@ A few of the decisions under the hood, for anyone who likes reading source code 
 - **Battery numbers are measured, never assumed.** The drain and gain rates you see are measured between transitions in your own battery's own reporting, debounced against the sensor's natural dither. Until a rate is confirmed it is shown as an upper bound (`<`) or an early read (`~`), or not at all, and a dash is a better answer than a lie.
 - **The "sun bonus" is a real regression, not a fixed ratio, and it learns across activities without being fooled by them.** How much runtime the sun bought you is fitted from your own battery's measured drain against how much light you were actually getting. One activity rarely holds enough evidence, so it pools across activities as a fixed-effects fit: every activity is measured against its own average drain before anything is combined. A sunny day that happened to use a hungrier GPS mode can never be read as the sun costing you battery. Past about 120 gaps' worth of evidence, older activities are scaled back so the estimate follows your watch as its battery ages. The running totals are saved every 5 minutes, so an activity that crashes still counts, less at most its last 5 minutes, and no activity is ever counted twice. Anything resting on earlier activities is marked with a `~`.
 - **Every developer field actually shows up on Garmin Connect.** Getting a `FitContributor` field into the raw `.FIT` file is the easy half. Connect's charts and activity summary need a second resource, `fitContributions.xml`, mapping each field to a chart title, a unit, and a color, keyed purely by numeric id. Skip it and your data records perfectly and Connect shows nothing at all. Fourteen fields make that trip correctly here.
-- **Two device generations, one codebase.** The fēnix 7 line runs an older Connect IQ API than everything released after it, missing a callback (`onTimerLap2`) that everything newer gets. Rather than dropping those watches, the build compiles that one code path out per device tier and falls back to the older callback where needed, so the whole fēnix 7 through fēnix 9 lineup ships from the same source.
+- **Three device generations, one codebase.** The fēnix 7 line runs an older Connect IQ API than everything released after it, and the fēnix 6 Pro line an older one still. Both miss a callback (`onTimerLap2`) that everything newer gets, so the build compiles that one code path out for them and falls back to the older callback. The fēnix 6 Pro's API also refuses any method with more than nine parameters and counts the app's code against its memory limit, so the code stays inside both rules. The whole fēnix 6 Pro through fēnix 9 lineup ships from the same source.
 - **The compass ring is a real animation of time, not a snapshot.** Half of it is solid (where the sun has already been), and a dotted arc sweeps ahead of it (where it is still going before sunset), the same visual language a weather radar loop uses for "already happened" versus "about to happen."
 
 ### Lap button behavior
@@ -99,11 +99,11 @@ Each one is built to refuse far more often than it fires: minutes-long holds bef
 
 ## Supported devices
 
-One `manifest.xml` entry is often several retail names sharing identical hardware underneath (a fēnix 7X is also sold as a tactix 7, a quatix 7X Solar, and an Enduro 2, for instance), so the real compatibility list runs longer than the 14 build targets suggest:
+One `manifest.xml` entry is often several retail names sharing identical hardware underneath (a fēnix 7X is also sold as a tactix 7, a quatix 7X Solar, and an Enduro 2, for instance), so the real compatibility list runs longer than the 17 build targets suggest:
 
-fēnix 7 · fēnix 7 Pro · fēnix 7 Pro Solar (No Wi-Fi) · fēnix 7S · fēnix 7S Pro · fēnix 7X · fēnix 7X Pro · fēnix 7X Pro (No Wi-Fi) · fēnix 8 Solar (47mm / 51mm) · fēnix 9 Pro Solar (47mm / 51mm) · Enduro 2 · Enduro 3 · tactix 7 · tactix 8 Solar (51mm) · quatix 7 · quatix 7X Solar · Forerunner 955 Dual Power
+fēnix 6 Pro Solar · fēnix 6S Pro Solar · fēnix 6X Pro Solar · fēnix 7 · fēnix 7 Pro · fēnix 7 Pro Solar (No Wi-Fi) · fēnix 7S · fēnix 7S Pro · fēnix 7X · fēnix 7X Pro · fēnix 7X Pro (No Wi-Fi) · fēnix 8 Solar (47mm / 51mm) · fēnix 9 Pro Solar (47mm / 51mm) · Enduro 2 · Enduro 3 · tactix Delta Solar · tactix 7 · tactix 8 Solar (51mm) · quatix 6X Solar · quatix 7 · quatix 7X Solar · Forerunner 955 Dual Power
 
-That spans two Connect IQ API generations and three physical screen sizes (240px, 260px, and 280px, all round), and the layout is verified against real simulator captures at every size, not just the one watch this was built on.
+That spans three Connect IQ API generations and three physical screen sizes (240px, 260px, and 280px, all round), and the layout is verified against real simulator captures at every size, not just the one watch this was built on.
 
 ## Getting it on your watch
 
@@ -158,7 +158,7 @@ docs/                   the images and GIF in this README
 
 ## Testing, and why there is so much of it
 
-104 unit tests on the newer device tier, 99 on the fēnix 7 generation (five exercise a callback that tier does not have). They run against every layout size the field ships to, not just one, and a stress section deliberately hammers the field with a dense sweep of times of day, extreme battery states, adversarial multi-day alert sequences, and a long-activity soak test checking for integer accumulators that would otherwise overflow on an ultra-length ride.
+104 unit tests on the newest device tier, and 99 on each of the fēnix 7 and fēnix 6 Pro generations (five exercise a callback those watches do not have, and the fēnix 6 Pro swaps one memory check for its own). They run against every layout size the field ships to, not just one, and a stress section deliberately hammers the field with a dense sweep of times of day, extreme battery states, adversarial multi-day alert sequences, and a long-activity soak test checking for integer accumulators that would otherwise overflow on an ultra-length ride.
 
 A few things worth knowing if you are reading the test file:
 
@@ -172,7 +172,8 @@ Being upfront about what this project cannot do, because a features list with no
 
 - **No real device battery-life (mAh) measurement.** Everything here is measured in percentage points per hour off the OS's own reporting, which is the only battery signal a Connect IQ data field is given. It cannot see the actual chemistry.
 - **Sun Bonus takes real time to earn.** A battery reported in whole percent only holds so much evidence per hour. Sun Bonus needs about 6 to 6.5 hours in one activity, or roughly six 2-hour activities with changing light pooled together, and an activity too short to see three battery steps adds nothing to it. Until then it reads "measuring", which is the honest answer rather than a bug. See [When each number appears](#when-each-number-appears).
-- **Instinct and rectangular color devices (like the solar Edge bike computers) are not supported.** The solar Instinct models give a data field 32 KB of memory, while this one uses about 49 KB running, and that is on top of a 1-bit display and a non-round screen this project's rendering was never built for. It is a real redesign, not a checkbox.
+- **The fēnix 6 Pro builds have only run in the Connect IQ simulator so far.** There they pass every test on all three screen sizes, render every page, hold steady memory with over 40% to spare, and stay well inside the watchdog limit that stops code running too long, but nobody has worn one with this field yet. The fēnix 6 also has a slower processor than the watches this was built on. If you run it on one, an issue saying how it went is very welcome.
+- **Instinct, the non-Pro fēnix 6 Solar and 6S Solar, and rectangular color devices (like the solar Edge bike computers) are not supported.** The solar Instinct models and the non-Pro fēnix 6 Solar and 6S Solar give a data field 32 KB of memory, while this one uses about 49 KB running on a fēnix 9 and about 60 KB on a fēnix 6 Pro, where the code counts against the same limit. The Instinct line also has a 1-bit display and a non-round screen this project's rendering was never built for. It is a real redesign, not a checkbox.
 
 ## Contributing
 

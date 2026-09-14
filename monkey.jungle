@@ -3,16 +3,24 @@ project.manifest = manifest.xml
 # Every supported product is a round MIP fenix-family solar watch, so there is no
 # longer a 1-bit build variant and the palette is a single colour implementation.
 
-# The fenix 7 generation runs Connect IQ 5.2.0. onTimerLap2 and its LapInfoType
-# arrived in 5.2.2, so the symbol has to be compiled out for exactly these
-# products; they take lap events through plain onTimerLap instead, which is the
-# only callback their firmware raises.
-fenix7.excludeAnnotations = lap2
-fenix7pro.excludeAnnotations = lap2
-fenix7pronowifi.excludeAnnotations = lap2
-fenix7s.excludeAnnotations = lap2
-fenix7spro.excludeAnnotations = lap2
-fenix7x.excludeAnnotations = lap2
-fenix7xpro.excludeAnnotations = lap2
-fenix7xpronowifi.excludeAnnotations = lap2
-fr955.excludeAnnotations = lap2
+# The fenix 6 generation runs Connect IQ 3.4 and the fenix 7 generation 5.2.0.
+# onTimerLap2 and its LapInfoType arrived in 5.2.2, so the symbol has to be
+# compiled out for exactly these products; they take lap events through plain
+# onTimerLap instead, which is the only callback their firmware raises.
+#
+# codeInHeap and codeOutsideHeap only mark unit tests, and pick which memory
+# check applies: on the fenix 6 generation the heap reading includes the loaded
+# code, so a test build that carries every test cannot be held to the limit.
+base.excludeAnnotations = codeInHeap
+fenix6pro.excludeAnnotations = lap2;codeOutsideHeap
+fenix6spro.excludeAnnotations = lap2;codeOutsideHeap
+fenix6xpro.excludeAnnotations = lap2;codeOutsideHeap
+fenix7.excludeAnnotations = lap2;codeInHeap
+fenix7pro.excludeAnnotations = lap2;codeInHeap
+fenix7pronowifi.excludeAnnotations = lap2;codeInHeap
+fenix7s.excludeAnnotations = lap2;codeInHeap
+fenix7spro.excludeAnnotations = lap2;codeInHeap
+fenix7x.excludeAnnotations = lap2;codeInHeap
+fenix7xpro.excludeAnnotations = lap2;codeInHeap
+fenix7xpronowifi.excludeAnnotations = lap2;codeInHeap
+fr955.excludeAnnotations = lap2;codeInHeap

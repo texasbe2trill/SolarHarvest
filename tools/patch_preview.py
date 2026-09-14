@@ -14,7 +14,8 @@ s = s[:old_start] + '''    function compute(info as Activity.Info) as Void {
         var t0 = Time.now().value();
         _clockOverride = (t0 - (t0 % 86400)) + 68400;  // mid-afternoon, via the real seam
         _hasSolar = true;
-        _model.setLearned(2.0, 5.0);  // stand-in for a converged fit
+        // Stand-in for a converged calibration: 2%/h saving at full sun, 5%/h drain.
+        _model.setCalibration([11.0, 312.5, -6.25, 0.0, 100.0, 10.0, 50.0] as Array<Float>);
         _charging = false;
         _daysLeft = 4.2;
         var now = nowSeconds();
