@@ -22,6 +22,13 @@ var gSkipFitRecording as Boolean = false;
 // degrades gracefully instead of crashing an activity.
 class SolarPowerView extends WatchUi.DataField {
 
+    static const CAL_KEY = "calibration";
+    static const CAL_PENDING_KEY = "calibrationPending";
+    static const CAL_VERSION = 1;
+    // Where the first release kept what it had learned.
+    static const LEGACY_SAVING_KEY = "learnedSaving";
+    static const LEGACY_DRAIN_KEY = "learnedDrain";
+
     private const PAGE_NOW = 0;
     private const PAGE_HARVEST = 1;
     private const PAGE_BATTERY = 2;
@@ -121,6 +128,9 @@ class SolarPowerView extends WatchUi.DataField {
 
     // Persisted calibration, and a throttle so storage is not written every tick.
     private var _saveTick as Number = 0;
+    // Start time of the activity whose snapshot this instance writes, or -1
+    // until the timer has started and the activity has one.
+    private var _activityTag as Number = -1;
 
     function initialize() {
         DataField.initialize();
@@ -148,7 +158,7 @@ class SolarPowerView extends WatchUi.DataField {
             Graphics.FONT_XTINY
         ] as Array<FontDefinition>;
         loadSettings();
-        loadLearned();
+        loadCalibration();
         if (!gSkipFitRecording) {
             _fit = new FitRecorder(self);
         }
@@ -184,6 +194,20 @@ class SolarPowerView extends WatchUi.DataField {
     // lap record captures if it closes before compute() refreshes them.
     function lapFieldSecondsForTest() as Number {
         return _lapFieldSeconds;
+    }
+
+    // What compute() does the first time an activity has a start time.
+    function beginActivityForTest(startTime as Number) as Void {
+        _activityTag = startTime;
+        absorbStalePending();
+    }
+
+    function calibrationForTest() as Array<Float> {
+        return _model.calibration();
+    }
+
+    function effectiveSavingForTest() as Float? {
+        return _model.effectiveSaving();
     }
 
     // Without a fix the sun geometry short-circuits, so a benchmark that never
@@ -317,6 +341,10 @@ class SolarPowerView extends WatchUi.DataField {
         _daysLeft = readDaysLeft(stats);
         _recording = isRecording(info);
         _model.addSampleWhen(intensity, stats.battery, _charging, _recording);
+        if (_activityTag < 0 && (info has :startTime) && info.startTime != null) {
+            _activityTag = (info.startTime as Time.Moment).value();
+            absorbStalePending();
+        }
 
         var fit = _fit;
         if (fit != null) {
@@ -354,12 +382,12 @@ class SolarPowerView extends WatchUi.DataField {
         _saveTick += 1;
         if (_saveTick >= 300) {
             _saveTick = 0;
-            saveLearned();
+            writePending();
         }
     }
 
     function onTimerStop() as Void {
-        saveLearned();
+        writePending();
     }
 
     // Raise at most one alert per second, and only while the timer is running.
@@ -489,6 +517,7 @@ class SolarPowerView extends WatchUi.DataField {
     }
 
     function onTimerReset() as Void {
+        commitActivity();
         _model.reset();
         _sunrise = -1;
         _sunset = -1;
@@ -2202,35 +2231,121 @@ class SolarPowerView extends WatchUi.DataField {
         return getBackgroundColor();
     }
 
-    // What earlier activities measured about this watch. Storage is best-effort:
-    // a device that refuses it simply falls back to measuring from scratch.
-    private function loadLearned() as Void {
+    // -- calibration carried between activities ---------------------------
+    //
+    // Storage holds the committed calibration and, separately, a snapshot of
+    // the activity in progress tagged with that activity's start time. The
+    // snapshot is what survives a crash or firmware that never delivers
+    // onTimerReset; the tag is what stops one activity being counted twice.
+    // The rule that keeps the total exact: the committed calibration never
+    // includes an activity whose snapshot is still pending, and a snapshot is
+    // only folded in by a different activity or by its own activity's end.
+    //
+    // Wherever the two writes could be interrupted, the snapshot is removed
+    // before the merged total is written. An interruption then loses one
+    // activity's evidence instead of counting it twice. All of it is best
+    // effort: a device that refuses storage measures each activity from
+    // scratch, as this field always did.
+
+    private function loadCalibration() as Void {
         try {
-            var saving = Application.Storage.getValue("learnedSaving");
-            var drain = Application.Storage.getValue("learnedDrain");
-            if (saving instanceof Lang.Float && drain instanceof Lang.Float
-                && saving > 0.0 && drain > 0.0) {
-                _model.setLearned(saving, drain);
+            var stored = Application.Storage.getValue(CAL_KEY);
+            if (stored instanceof Lang.Array && stored.size() > 0 && stored[0] == CAL_VERSION) {
+                var c = SolarModel.calibrationFrom(stored, 1);
+                if (c != null) {
+                    _model.setCalibration(c);
+                }
             }
+            migrateLegacy(stored == null);
         } catch (ex) {
-            // No calibration carried over; the model measures from scratch.
+            // Nothing carried over; the model measures from scratch.
         }
     }
 
-    // Only ever writes values this activity actually measured, so a carried-over
-    // number can never be written back and compound.
-    private function saveLearned() as Void {
-        var saving = _model.solarOffsetPerHour();
-        var drain = _model.drainPerHour();
-        if (saving == null || drain == null || saving <= 0.0 || drain <= 0.0) {
+    // Carries the first release's saving forward once (see
+    // SolarModel.calibrationFromLegacy), and only onto a watch with nothing
+    // newer committed, then removes the old keys. An interruption between the
+    // two leaves a committed calibration behind, which stops it happening twice.
+    private function migrateLegacy(nothingCommitted as Boolean) as Void {
+        var saving = Application.Storage.getValue(LEGACY_SAVING_KEY);
+        if (saving == null && Application.Storage.getValue(LEGACY_DRAIN_KEY) == null) {
+            return;
+        }
+        if (nothingCommitted
+            && (saving instanceof Lang.Float || saving instanceof Lang.Number || saving instanceof Lang.Double)) {
+            var seed = SolarModel.calibrationFromLegacy((saving as Numeric).toFloat());
+            if (seed != null) {
+                storeCalibration(seed);
+            }
+        }
+        Application.Storage.deleteValue(LEGACY_SAVING_KEY);
+        Application.Storage.deleteValue(LEGACY_DRAIN_KEY);
+    }
+
+    // A snapshot left by any other activity joins the committed calibration
+    // before this activity can write its own over it. One this activity wrote
+    // itself is left where it is.
+    private function absorbStalePending() as Void {
+        try {
+            var pending = Application.Storage.getValue(CAL_PENDING_KEY);
+            if (!(pending instanceof Lang.Array)) {
+                return;
+            }
+            var add = null;
+            if (pending.size() > 1 && pending[0] == CAL_VERSION
+                && (pending[1] instanceof Lang.Number || pending[1] instanceof Lang.Long)) {
+                if ((pending[1] as Numeric).toNumber() == _activityTag) {
+                    return;
+                }
+                add = SolarModel.calibrationFrom(pending, 2);
+            }
+            Application.Storage.deleteValue(CAL_PENDING_KEY);
+            if (add != null) {
+                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), add));
+            }
+        } catch (ex) {
+            // Left for the next activity to try again.
+        }
+    }
+
+    // This activity's contribution so far. Written over itself, so saving it
+    // every few minutes and again at every stop never adds anything twice.
+    private function writePending() as Void {
+        if (_activityTag < 0) {
+            return;
+        }
+        var a = _model.activityCalibration();
+        if (a[0] <= 0.0 && a[5] <= 0.0) {
             return;
         }
         try {
-            Application.Storage.setValue("learnedSaving", saving);
-            Application.Storage.setValue("learnedDrain", drain);
+            Application.Storage.setValue(CAL_PENDING_KEY,
+                [CAL_VERSION, _activityTag, a[0], a[1], a[2], a[3], a[4], a[5], a[6]]
+                    as Array<Numeric>);
         } catch (ex) {
             // Not being able to remember is not a reason to fail the activity.
         }
+    }
+
+    // The activity is over: what it measured joins the committed calibration.
+    private function commitActivity() as Void {
+        try {
+            absorbStalePending();
+            var a = _model.activityCalibration();
+            Application.Storage.deleteValue(CAL_PENDING_KEY);
+            if (a[0] > 0.0 || a[5] > 0.0) {
+                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), a));
+            }
+        } catch (ex) {
+            // The snapshot, if written, is folded in by the next activity.
+        }
+        _activityTag = -1;
+    }
+
+    private function storeCalibration(c as Array<Float>) as Void {
+        _model.setCalibration(c);
+        Application.Storage.setValue(CAL_KEY,
+            [CAL_VERSION, c[0], c[1], c[2], c[3], c[4], c[5], c[6]] as Array<Numeric>);
     }
 
     private function percentText(fraction as Float) as String {

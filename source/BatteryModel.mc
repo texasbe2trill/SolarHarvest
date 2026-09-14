@@ -39,6 +39,12 @@ class BatteryModel {
     // before the fitted coefficient means anything.
     static const REG_MIN_INTERVALS = 12;
     static const REG_MIN_SPREAD = 25.0;
+    // The least light variation any activity meeting both rules above can
+    // have: every interval but the two extremes sitting at the midpoint of a
+    // 25 point spread. Evidence pooled across activities has to carry at least
+    // this much, so it is never weaker than the weakest single activity the
+    // rules already accept.
+    static const REG_MIN_VARIATION = 312.5;
     // Fallback quantum before the reporting resolution has been observed.
     static const DEFAULT_QUANTUM = 0.05;
 
@@ -71,13 +77,17 @@ class BatteryModel {
     private var _prevEdgeT as Number = -1;
     private var _prevEdgeLevel as Float = 0.0;
 
-    // Incremental least squares of interval drain rate against mean sunlight.
-    // Only running sums are kept, so memory does not grow with activity length.
+    // Incremental least squares of interval drain rate against mean sunlight,
+    // kept as running means and co-deviations about them rather than raw sums.
+    // Raw sums subtract two large, nearly equal numbers to recover the spread,
+    // which a 32-bit float does badly; these hold the spread directly. They are
+    // also exactly this activity's "within" sums, which is what pooling across
+    // activities needs. Memory does not grow with activity length.
     private var _n as Number = 0;
-    private var _sumX as Float = 0.0;
-    private var _sumY as Float = 0.0;
-    private var _sumXY as Float = 0.0;
-    private var _sumXX as Float = 0.0;
+    private var _meanX as Float = 0.0;
+    private var _meanY as Float = 0.0;
+    private var _cxx as Float = 0.0;
+    private var _cxy as Float = 0.0;
     private var _minX as Float = 0.0;
     private var _maxX as Float = 0.0;
     private var _solSum as Float = 0.0;
@@ -107,10 +117,10 @@ class BatteryModel {
         _prevEdgeT = -1;
         _prevEdgeLevel = 0.0;
         _n = 0;
-        _sumX = 0.0;
-        _sumY = 0.0;
-        _sumXY = 0.0;
-        _sumXX = 0.0;
+        _meanX = 0.0;
+        _meanY = 0.0;
+        _cxx = 0.0;
+        _cxy = 0.0;
         _minX = 0.0;
         _maxX = 0.0;
         _solSum = 0.0;
@@ -213,10 +223,11 @@ class BatteryModel {
                 _maxX = x;
             }
             _n += 1;
-            _sumX += x;
-            _sumY += y;
-            _sumXY += x * y;
-            _sumXX += x * x;
+            var dx = x - _meanX;
+            _meanX += dx / _n;
+            _meanY += (y - _meanY) / _n;
+            _cxx += dx * (x - _meanX);
+            _cxy += dx * (y - _meanY);
         }
 
         _lastT = t;
@@ -336,15 +347,10 @@ class BatteryModel {
     // measured intervals rather than differenced between two noisy buckets.
     // Null unless the fit rests on enough intervals spanning enough sunlight.
     function solarSavingPerHour() as Float? {
-        if (_n < REG_MIN_INTERVALS || (_maxX - _minX) < REG_MIN_SPREAD) {
+        if (_n < REG_MIN_INTERVALS || (_maxX - _minX) < REG_MIN_SPREAD || _cxx < 0.000001) {
             return null;
         }
-        var denom = (_n * _sumXX) - (_sumX * _sumX);
-        if (denom.abs() < 0.000001) {
-            return null;
-        }
-        var slope = ((_n * _sumXY) - (_sumX * _sumY)) / denom;
-        var saving = -slope * 100.0;
+        var saving = -(_cxy / _cxx) * 100.0;
         return (saving > 0.05) ? saving : null;
     }
 
@@ -353,8 +359,69 @@ class BatteryModel {
         if (solarSavingPerHour() == null) {
             return null;
         }
-        var denom = (_n * _sumXX) - (_sumX * _sumX);
-        var slope = ((_n * _sumXY) - (_sumX * _sumY)) / denom;
-        return (_sumY - (slope * _sumX)) / _n;
+        return _meanY - ((_cxy / _cxx) * _meanX);
+    }
+
+    // The same coefficient, fitted on this activity's intervals together with
+    // everything earlier activities contributed (the prior arguments).
+    //
+    // Pooled as a fixed-effects fit: each activity's intervals are measured
+    // against that activity's own means before they are combined. Baseline
+    // drain differs between activities - GPS mode, backlight, heat - and a
+    // plain pooled fit would read a sunny day that happened to use a hungrier
+    // GPS mode as the sun costing battery. Only light that varied within one
+    // activity can say what light is worth, so that is all this uses. The cost
+    // is that an activity needs at least two intervals, three battery steps,
+    // to contribute anything: one interval says nothing about the sun that is
+    // not confounded with that activity's own drain.
+    //
+    // With no prior this is exactly solarSavingPerHour(), gates included.
+    function pooledSavingPerHour(priorDof as Float, priorCxx as Float, priorCxy as Float,
+                                 priorMinX as Float, priorMaxX as Float) as Float? {
+        var dof = priorDof;
+        var cxx = priorCxx;
+        var cxy = priorCxy;
+        var lo = priorMinX;
+        var hi = priorMaxX;
+        if (_n >= 2) {
+            dof += _n - 1;
+            cxx += _cxx;
+            cxy += _cxy;
+            if (_minX < lo) {
+                lo = _minX;
+            }
+            if (_maxX > hi) {
+                hi = _maxX;
+            }
+        }
+        if (dof < REG_MIN_INTERVALS - 1 || (hi - lo) < REG_MIN_SPREAD
+            || cxx < REG_MIN_VARIATION) {
+            return null;
+        }
+        var saving = -(cxy / cxx) * 100.0;
+        return (saving > 0.05) ? saving : null;
+    }
+
+    // What this activity can add to the cross-activity calibration, as
+    // [dof, cxx, cxy, minLight, maxLight, drainHours, drainPercent].
+    //
+    // Drain is kept as the measured window's hours and net percent rather than
+    // as a rate, so combining activities gives total percent over total hours,
+    // weighting each by how long it was actually measured. Only a confirmed
+    // drain counts, the same evidence rule the RATE figure uses.
+    function calibrationContribution() as Array<Float> {
+        var c = [0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0, 0.0] as Array<Float>;
+        if (_n >= 2) {
+            c[0] = (_n - 1).toFloat();
+            c[1] = _cxx;
+            c[2] = _cxy;
+            c[3] = _minX;
+            c[4] = _maxX;
+        }
+        if (drainPerHour() != null) {
+            c[5] = (_lastT - _firstT) / 3600.0;
+            c[6] = _firstLevel - _lastLevel;
+        }
+        return c;
     }
 }

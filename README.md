@@ -12,6 +12,7 @@ It is free. It always will be. See [Supporting this project](#supporting-this-pr
 
 - [Why this exists](#why-this-exists)
 - [The seven pages](#the-seven-pages)
+- [When each number appears](#when-each-number-appears)
 - [What makes it actually good](#what-makes-it-actually-good)
 - [Alerts](#alerts)
 - [Supported devices](#supported-devices)
@@ -30,7 +31,7 @@ Every solar Garmin ships with the same quiet lie baked into its default watch fa
 
 Solar Harvest was built to answer the question a solar watch should have been answering the whole time: **is the sun actually helping right now, and by how much?**
 
-Every number this field shows is either raw physics (the sun's real position, computed from the NOAA solar equations, not a weather API that goes stale the moment your phone stops syncing) or something measured live off your own watch's own battery, on this activity, on this device. Nothing is a guessed constant dressed up as a fact.
+Every number this field shows is either raw physics (the sun's real position, computed from the NOAA solar equations, not a weather API that goes stale the moment your phone stops syncing) or something measured off your own watch's own battery, on this device: from this activity, or, marked with a `~`, from earlier ones. Nothing is a guessed constant dressed up as a fact.
 
 ## The seven pages
 
@@ -40,25 +41,43 @@ Cycle through them automatically, pin your favorite, or map the lap button to fl
 
 | Page | What it tells you |
 | --- | --- |
-| **Solar Now** | Live intensity, a scrolling bar chart of the last several minutes, and today's average and peak |
-| **Full Sun Time** | Cumulative minutes spent at full solar charge, plus the running bonus that time bought your battery |
-| **Battery** | An animated battery icon (not a chart) that fills and flows in the direction your level is actually moving, with the measured drain or gain rate beside it |
+| **Solar Now** | Live intensity, a scrolling bar chart of the last several minutes, and this activity's average and peak |
+| **Full Sun Time** | Your sunlight added up as time at full intensity (an hour at 50% counts as 30 minutes), plus the runtime that sun bought once there is enough evidence to measure it |
+| **Battery** | An animated battery icon (not a chart) that fills and flows in the direction your level is actually moving, beside the drain or gain rate as soon as there is evidence for one |
 | **Sun Window** | Minutes of full sun still ahead before sunset, or a live daylight arc showing where you are in the day |
 | **Catching** | The signature metric: what share of the sunlight your position and the sun's height *should* be delivering are you actually catching. Low despite a high sun means shade, canopy, or a sleeve, not a broken sensor |
-| **Sun Bonus** | The hour's drain, split into what the sun paid for and what your battery paid for, fitted from real regression against your own measured data (and marked with a `~` the moment it is leaning on a value learned from an earlier activity instead of this one) |
+| **Sun Bonus** | The hour's drain, split into what the sun paid for and what your battery paid for, fitted by regression against your own measured data. It is the slowest number to earn (see below) and is marked with a `~` whenever it relies on earlier activities |
 | **Compass** | Where the sun actually is right now, plus its whole path across today's sky, dotted ahead of your current position like a weather radar loop |
 
 An animated preview, captured straight from the simulator:
 
 ![Cycling through every page](docs/solar-harvest.gif)
 
+## When each number appears
+
+Your watch reports its battery in steps, whole percent on the watches this has been tested on, and every battery number here is measured from those steps rather than estimated, so some numbers take much longer than others. The times below assume whole percent steps and a typical drain of about 2% an hour during a GPS activity. A watch that drains faster, or reports finer steps, gets there sooner.
+
+| Number | What it needs | Typically |
+| --- | --- | --- |
+| Solar intensity and full sun time | Nothing but the solar sensor | Right away |
+| Catching, Sun Window, Compass | Your location from the activity's GPS. Catching also needs the sun at least 15° up, and the compass only appears while the sun is above the horizon | As soon as GPS locks |
+| Early drain figure on the Battery page | 5 minutes at one level for an upper bound (`<`), then an early read (`~`) once the level first changes | Upper bound at 5 minutes, early read within about 30 minutes |
+| Battery rate and runtime left, on the watch and in Garmin Connect | Two 1% steps at least 5 minutes apart, and 10 minutes of timer | Within about an hour |
+| Battery gain alert | A confirmed rate showing gain, meaning your latest 1% step sits above your first one, held for 2 minutes | Rare during a GPS activity: the sun has to repay everything used since that first step |
+| Sun Bonus from one activity, and the Solar Saving stat in Garmin Connect | 13 battery steps (12 gaps between them), with average light differing by at least 25 points between the sunniest and shadiest gap | About 6 to 6.5 hours in that activity |
+| Sun Bonus pooled across activities | The same amount of evidence spread over several activities (below) | About six 2-hour activities, or three 3-hour ones |
+
+Pooling has one rule that makes it slower than simply adding hours together. Only light that changed during an activity can show what light is worth, because every activity also has its own baseline drain from GPS mode, backlight, and heat. So each activity counts its battery steps minus 2 toward a total of 11, which is exactly what a single 13 step activity holds, and the light has to have varied within those activities at least as much as that single activity would need. An activity that ends before its third step (60 to 90 minutes at 2% an hour, depending on where the level sat when it started) adds nothing to Sun Bonus. One spent in unchanging light adds to the count but teaches it nothing about light, which is why the typical figures above assume every activity mixes sun and shade.
+
+Once there is enough, later activities no longer wait: Sun Bonus appears, marked `~`, as soon as the sun has bought that activity a whole minute of runtime. An activity that gathers enough evidence on its own switches to its own measurement and drops the `~`. Once about 120 gaps' worth of evidence has built up, older activities are scaled back as new ones arrive, so the estimate follows your watch as its battery ages. The Solar Saving stat in Garmin Connect is only ever written from the activity's own measurement, never from earlier ones.
+
 ## What makes it actually good
 
 A few of the decisions under the hood, for anyone who likes reading source code as much as I do:
 
 - **Real solar geometry, not a weather cache.** Sunrise, sunset, elevation, and azimuth all come from the NOAA solar position equations, computed on-device from your GPS fix and the date. `Weather.getSunset()` returns whatever your phone last synced, which on a watch that has not paired all day is simply `null`. Geometry does not have that problem.
-- **Battery numbers are measured, never assumed.** The drain and gain rates you see are fitted from edge-to-edge transitions in your own battery's own reporting, debounced against the sensor's natural dither. A number this project cannot measure yet, it does not show, and a dash is a better answer than a lie.
-- **The "sun bonus" is a real regression, not a fixed ratio.** How much runtime the sun bought you this hour is fitted against your own measured drain across changing light conditions, the same way you would if you plotted it by hand. Values it has not measured yet on this activity fall back to whatever an earlier activity taught it (Garmin's `Application.Storage` persists it between runs), always marked with a `~` so you can tell a live number from a remembered one.
+- **Battery numbers are measured, never assumed.** The drain and gain rates you see are measured between transitions in your own battery's own reporting, debounced against the sensor's natural dither. Until a rate is confirmed it is shown as an upper bound (`<`) or an early read (`~`), or not at all, and a dash is a better answer than a lie.
+- **The "sun bonus" is a real regression, not a fixed ratio, and it learns across activities without being fooled by them.** How much runtime the sun bought you is fitted from your own battery's measured drain against how much light you were actually getting. One activity rarely holds enough evidence, so it pools across activities as a fixed-effects fit: every activity is measured against its own average drain before anything is combined. A sunny day that happened to use a hungrier GPS mode can never be read as the sun costing you battery. Past about 120 gaps' worth of evidence, older activities are scaled back so the estimate follows your watch as its battery ages. The running totals are saved every 5 minutes, so an activity that crashes still counts, less at most its last 5 minutes, and no activity is ever counted twice. Anything resting on earlier activities is marked with a `~`.
 - **Every developer field actually shows up on Garmin Connect.** Getting a `FitContributor` field into the raw `.FIT` file is the easy half. Connect's charts and activity summary need a second resource, `fitContributions.xml`, mapping each field to a chart title, a unit, and a color, keyed purely by numeric id. Skip it and your data records perfectly and Connect shows nothing at all. Fourteen fields make that trip correctly here.
 - **Two device generations, one codebase.** The fēnix 7 line runs an older Connect IQ API than everything released after it, missing a callback (`onTimerLap2`) that everything newer gets. Rather than dropping those watches, the build compiles that one code path out per device tier and falls back to the older callback where needed, so the whole fēnix 7 through fēnix 9 lineup ships from the same source.
 - **The compass ring is a real animation of time, not a snapshot.** Half of it is solid (where the sun has already been), and a dotted arc sweeps ahead of it (where it is still going before sunset), the same visual language a weather radar loop uses for "already happened" versus "about to happen."
@@ -71,7 +90,7 @@ Pressing the physical lap button always records a lap. A data field has no way t
 
 Four `DataFieldAlert` cards, tuned to say something only when it is actually worth interrupting you for:
 
-- **Battery gain**: the sun has started outrunning your drain
+- **Battery gain**: your battery has measurably climbed, its latest 1% step now above the first one this activity (rare during GPS use; see [When each number appears](#when-each-number-appears))
 - **In shade**: a sustained drop in light, not a passing cloud shadow
 - **Back in sun**: recovery after a shade alert
 - **Sunset warning**: full sun is about to run out for the day
@@ -88,7 +107,7 @@ That spans two Connect IQ API generations and three physical screen sizes (240px
 
 ## Getting it on your watch
 
-Once it is listed, the easiest path will be the Connect IQ Store on your phone or at [apps.garmin.com](https://apps.garmin.com). Until then, or if you would rather build from source, see below.
+Install it from the Connect IQ Store on your phone or at [apps.garmin.com](https://apps.garmin.com). If you would rather build it from source, see below.
 
 ## Building it yourself
 
@@ -117,8 +136,8 @@ The `tools/` directory has the scripts used to generate every screenshot and the
 ```
 source/
   SolarPowerView.mc     the field itself: seven pages, rendering, settings, alerts wiring
-  SolarModel.mc         solar intensity tracking, smoothing, trend, zones
-  BatteryModel.mc       edge-to-edge drain/gain measurement, regression, projections
+  SolarModel.mc         solar intensity tracking, smoothing, trend, zones, calibration carried between activities
+  BatteryModel.mc       edge-to-edge drain/gain measurement, per-activity and pooled regression, projections
   SolarGeometry.mc      NOAA solar position equations (elevation, azimuth, sunrise/sunset)
   SolarAlerts.mc        alert condition logic
   SolarAlertView.mc     the full-screen alert card
@@ -139,11 +158,12 @@ docs/                   the images and GIF in this README
 
 ## Testing, and why there is so much of it
 
-83 unit tests on the newer device tier, 80 on the fēnix 7 generation (three exercise a callback that tier does not have). They run against every layout size the field ships to, not just one, and a stress section deliberately hammers the field with a dense sweep of times of day, extreme battery states, adversarial multi-day alert sequences, and a long-activity soak test checking for integer accumulators that would otherwise overflow on an ultra-length ride.
+104 unit tests on the newer device tier, 99 on the fēnix 7 generation (five exercise a callback that tier does not have). They run against every layout size the field ships to, not just one, and a stress section deliberately hammers the field with a dense sweep of times of day, extreme battery states, adversarial multi-day alert sequences, and a long-activity soak test checking for integer accumulators that would otherwise overflow on an ultra-length ride.
 
 A few things worth knowing if you are reading the test file:
 
 - `FitContributor.Field` cannot be constructed at all outside a live, watch-recorded activity. It throws a native error that bypasses Monkey C's own exception handling entirely, so `FitRecorder` itself is untestable by design, and every test that builds a view sets `gSkipFitRecording` first. What *is* tested is every piece of arithmetic that feeds it.
+- The calibration carried between activities is tested through real storage, not a mock: an activity stopped and resumed is committed exactly once, an activity that crashed before it could finish is folded in by the next one, a field restarted mid-activity never counts its own activity twice, and a Sun Bonus saved by the first release is carried forward exactly once.
 - The Connect IQ simulator has its own sharp edges: a crashed run leaves it pinned on a crash screen that then poisons every later screenshot, and a simulator that has been running a while can report frame costs several times higher than a fresh one. `tools/preview.sh` restarts the simulator before every single capture because of the first one.
 
 ## Known limits
@@ -151,8 +171,8 @@ A few things worth knowing if you are reading the test file:
 Being upfront about what this project cannot do, because a features list with no edges is not a features list you should trust:
 
 - **No real device battery-life (mAh) measurement.** Everything here is measured in percentage points per hour off the OS's own reporting, which is the only battery signal a Connect IQ data field is given. It cannot see the actual chemistry.
-- **A brand new watch has to learn your solar bonus before it can show one.** The regression behind the Sun Bonus page needs a real spread of light conditions across enough measured intervals within one activity before it has anything to fit. Your first ride in flat, unchanging light will show "measuring" the whole way through, and that is the correct answer, not a bug.
-- **Instinct and rectangular color devices (like the solar Edge bike computers) are not supported.** The Instinct line's data-field memory budget is a quarter of what this app already uses, on top of a 1-bit display and a non-round screen this project's rendering was never built for. It is a real redesign, not a checkbox.
+- **Sun Bonus takes real time to earn.** A battery reported in whole percent only holds so much evidence per hour. Sun Bonus needs about 6 to 6.5 hours in one activity, or roughly six 2-hour activities with changing light pooled together, and an activity too short to see three battery steps adds nothing to it. Until then it reads "measuring", which is the honest answer rather than a bug. See [When each number appears](#when-each-number-appears).
+- **Instinct and rectangular color devices (like the solar Edge bike computers) are not supported.** The solar Instinct models give a data field 32 KB of memory, while this one uses about 49 KB running, and that is on top of a 1-bit display and a non-round screen this project's rendering was never built for. It is a real redesign, not a checkbox.
 
 ## Contributing
 

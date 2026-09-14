@@ -1,3 +1,4 @@
+import Toybox.Application;
 import Toybox.Graphics;
 import Toybox.Math;
 import Toybox.System;
@@ -1030,7 +1031,7 @@ function testSunBonusPageAgreesWithItself(logger as Logger) as Boolean {
     for (var i = 0; i < 600; i++) {
         model.addSample(50, 80.0, false);
     }
-    model.setLearned(2.0, 5.0);
+    model.setCalibration(calibrationWith(2.0, 5.0));
 
     var saving = model.effectiveSaving();
     var drain = model.effectiveDrain();
@@ -2011,7 +2012,7 @@ function testLearnedCalibrationMakesTheBonusAvailableEarly(logger as Logger) as 
 
     // Same activity on a watch that measured itself on an earlier one.
     var seeded = new SolarModel(1);
-    seeded.setLearned(3.0, 4.5);
+    seeded.setCalibration(calibrationWith(3.0, 4.5));
     level = 88.0;
     for (var i = 0; i < 1800; i++) {
         level -= 4.0 / 3600.0;
@@ -2035,7 +2036,7 @@ function testMeasuredBonusOverridesLearned(logger as Logger) as Boolean {
     // Five hours across both extremes: this activity can fit its own benefit,
     // and that must win over whatever was carried in.
     var model = new SolarModel(1);
-    model.setLearned(99.0, 99.0);   // deliberately absurd
+    model.setCalibration(calibrationWith(99.0, 99.0));   // deliberately absurd
     var level = 95.0;
     for (var i = 0; i < 18000; i++) {
         var sun = ((i / 1800) % 2 == 0) ? 0 : 100;
@@ -2053,6 +2054,344 @@ function testMeasuredBonusOverridesLearned(logger as Logger) as Boolean {
         "the measured coefficient wins over the seeded one");
     return true;
 }
+
+// -- calibration carried between activities ----------------------------------
+//
+// Sun Bonus needs far more varied light than one ordinary activity holds, so
+// its evidence is pooled across activities as a fixed-effects fit: each
+// activity's intervals are centred on that activity's own means before they
+// are combined, so differences in baseline drain between activities (GPS mode,
+// backlight, heat) can never be mistaken for the effect of the sun.
+
+// A calibration equivalent to one earlier activity that only just met every
+// rule the pooled fit applies, at the given saving, plus ten measured hours at
+// the given drain.
+function calibrationWith(savingPerHour as Float, drainPerHour as Float) as Array<Float> {
+    var cxx = BatteryModel.REG_MIN_VARIATION;
+    return [(BatteryModel.REG_MIN_INTERVALS - 1).toFloat(), cxx, -(savingPerHour / 100.0) * cxx,
+            0.0, 100.0, 10.0, drainPerHour * 10.0] as Array<Float>;
+}
+
+// One activity on a watch that reports whole percent: `benefit` percent per
+// hour saved at full sun on top of `darkDrain`, alternating shade and sun.
+function feedWholePercent(model as SolarModel, darkDrain as Float, benefit as Float,
+                          shadeMinutes as Number, sunMinutes as Number, seconds as Number) as Void {
+    var level = 90.5;
+    var cycle = (shadeMinutes + sunMinutes) * 60;
+    for (var t = 0; t < seconds; t++) {
+        var sun = ((t % cycle) < (shadeMinutes * 60)) ? 0 : 100;
+        level -= (darkDrain - (benefit * sun / 100.0)) / 3600.0;
+        model.addSample(sun, level.toNumber().toFloat(), false);
+    }
+}
+
+(:test)
+function testPooledFitIgnoresEachActivitysOwnBaseline(logger as Logger) as Boolean {
+    // The confound fixed effects exist for. A: a frugal activity, mostly in
+    // shade. B: a hungry one, mostly in sun. Both gain the same 3%/h at full
+    // sun, but a plain pooled fit sees low drain in the dark and high drain in
+    // the sun and concludes sunlight costs battery.
+    var a = new SolarModel(1);
+    feedWholePercent(a, 4.0, 3.0, 45, 15, 10200);
+    var b = new SolarModel(1);
+    feedWholePercent(b, 12.0, 3.0, 15, 45, 3900);
+
+    var ca = a.activityCalibration();
+    var cb = b.activityCalibration();
+    logger.debug("A dof=" + ca[0].format("%.0f") + " B dof=" + cb[0].format("%.0f"));
+    Test.assertMessage(a.solarOffsetPerHour() == null && b.solarOffsetPerHour() == null,
+        "each activity alone must be too thin to fit");
+    Test.assertMessage(ca[0] + cb[0] >= (BatteryModel.REG_MIN_INTERVALS - 1).toFloat(),
+        "together they must carry enough evidence for the test to mean anything");
+
+    b.setCalibration(SolarModel.mergeCalibration(SolarModel.emptyCalibration(), ca));
+    var pooled = b.effectiveSaving();
+    if (pooled == null) {
+        Test.assertMessage(false, "two activities with varied light must pool into a fit");
+        return false;
+    }
+    logger.debug("pooled saving " + pooled.format("%.3f") + "%/h for a true 3.000");
+    Test.assertMessage((pooled - 3.0).abs() < 0.5,
+        "the pooled fit must recover the true 3%/h despite the baselines, got " + pooled.format("%.3f"));
+    Test.assertMessage(b.bonusIsLearned(),
+        "a coefficient resting on an earlier activity must be marked as carried over");
+    return true;
+}
+
+(:test)
+function testLightThatOnlyVariesBetweenActivitiesIsNotEvidence(logger as Logger) as Boolean {
+    // All shade on one day, all sun on another, different baselines. The two
+    // days differ in light and in drain, but nothing separates the sun from
+    // everything else that differed, so no coefficient may be claimed.
+    var dark = new SolarModel(1);
+    feedWholePercent(dark, 4.0, 3.0, 1000, 0, 30000);
+    var sunny = new SolarModel(1);
+    feedWholePercent(sunny, 7.0, 3.0, 0, 1000, 30000);
+    var cd = dark.activityCalibration();
+    Test.assertMessage(cd[0] >= 11.0, "enough intervals that only the light rule can refuse it");
+    sunny.setCalibration(SolarModel.mergeCalibration(SolarModel.emptyCalibration(), cd));
+    Test.assertMessage(sunny.effectiveSaving() == null,
+        "light that differs only between activities must not produce a coefficient");
+    return true;
+}
+
+(:test)
+function testPooledFitWithNoHistoryIsTheActivitysOwnFit(logger as Logger) as Boolean {
+    var model = new SolarModel(1);
+    var level = 95.0;
+    for (var i = 0; i < 18000; i++) {
+        var sun = ((i / 1800) % 2 == 0) ? 0 : 100;
+        level -= (6.0 - (3.0 * sun / 100.0)) / 3600.0;
+        model.addSample(sun, level, false);
+    }
+    var own = model.solarOffsetPerHour();
+    var pooled = model.pooledSavingPerHour();
+    Test.assertMessage(own != null && pooled != null, "a long varied activity fits both ways");
+    Test.assertMessage(own == pooled, "with nothing carried over, pooling must change nothing");
+    return true;
+}
+
+(:test)
+function testAnActivityNeedsThreeStepsToContribute(logger as Logger) as Boolean {
+    // Two steps bound one interval, and one interval cannot separate the sun
+    // from that activity's own drain. The first step starts the count, so a
+    // third is needed before anything is added.
+    var model = new SolarModel(1);
+    feedWholePercent(model, 6.0, 0.0, 1, 0, 1500);     // steps at ~5 and ~15 minutes
+    Test.assertMessage(model.batteryEdges() == 2, "setup: two steps, got " + model.batteryEdges().format("%d"));
+    var c = model.activityCalibration();
+    Test.assertMessage(c[0] == 0.0 && c[1] == 0.0, "two steps must contribute no evidence");
+
+    var more = new SolarModel(1);
+    feedWholePercent(more, 6.0, 0.0, 1, 0, 2100);      // a third step at ~25 minutes
+    Test.assertMessage(more.batteryEdges() == 3, "setup: three steps, got " + more.batteryEdges().format("%d"));
+    Test.assertMessage(more.activityCalibration()[0] == 1.0, "three steps contribute one degree of freedom");
+    return true;
+}
+
+(:test)
+function testMergeScalesBackOnlyTheOldestEvidence(logger as Logger) as Boolean {
+    var prior = [120.0, 1200.0, -24.0, 0.0, 100.0, 18.0, 36.0] as Array<Float>;   // 2.0%/h, 2.0%/h drain
+    var add = [20.0, 400.0, -16.0, 10.0, 90.0, 5.0, 15.0] as Array<Float>;        // 4.0%/h, 3.0%/h drain
+    var m = SolarModel.mergeCalibration(prior, add);
+    Test.assertMessage((m[0] - 120.0).abs() < 0.001, "degrees of freedom are capped at 120, got " + m[0].format("%.3f"));
+    var saving = -(m[2] / m[1]) * 100.0;
+    Test.assertMessage((saving - 2.5714).abs() < 0.001,
+        "the new activity counts in full against scaled-back history, got " + saving.format("%.4f"));
+    Test.assertMessage((m[5] - 20.0).abs() < 0.001, "drain hours are capped at 20");
+    Test.assertMessage(((m[6] / m[5]) - 2.25).abs() < 0.001, "drain is total percent over total hours");
+    Test.assertMessage(m[3] == 0.0 && m[4] == 100.0, "light range is the union while history remains");
+
+    var small = SolarModel.mergeCalibration([10.0, 100.0, -2.0, 20.0, 60.0, 2.0, 4.0] as Array<Float>, add);
+    Test.assertMessage(small[0] == 30.0 && small[1] == 500.0 && small[2] == -18.0,
+        "under the cap, merging is exact addition");
+    return true;
+}
+
+(:test)
+function testLearnedDrainNeedsAnHourOfMeasurement(logger as Logger) as Boolean {
+    var thin = new SolarModel(1);
+    thin.setCalibration([0.0, 0.0, 0.0, 1000.0, -1000.0, 0.5, 1.0] as Array<Float>);
+    Test.assertMessage(thin.effectiveDrain() == null, "half an hour of measured drain is one quantised step");
+    var enough = new SolarModel(1);
+    enough.setCalibration([0.0, 0.0, 0.0, 1000.0, -1000.0, 2.0, 4.0] as Array<Float>);
+    var d = enough.effectiveDrain();
+    Test.assertMessage(d != null && (d - 2.0).abs() < 0.0001, "two measured hours at 4% is 2%/h");
+    return true;
+}
+
+(:test)
+function testStoredCalibrationIsValidatedNotTrusted(logger as Logger) as Boolean {
+    Test.assertMessage(SolarModel.calibrationFrom([1, 2.0, 3.0] as Array, 1) == null, "too short");
+    Test.assertMessage(SolarModel.calibrationFrom([1, 11, 312.5, -6.25, 0, 100, "x", 40.0] as Array, 1) == null,
+        "a non-number anywhere");
+    Test.assertMessage(SolarModel.calibrationFrom([1, -1.0, 312.5, -6.25, 0.0, 100.0, 10.0, 40.0] as Array, 1) == null,
+        "negative degrees of freedom");
+    var c = SolarModel.calibrationFrom([1, 11, 312.5, -6.25, 0, 100, 10, 40] as Array, 1);
+    Test.assertMessage(c != null && c[0] == 11.0 && c[6] == 40.0, "whole numbers read back as floats");
+    return true;
+}
+
+// -- calibration lifecycle through real storage -------------------------------
+
+function clearCalibrationStorage() as Void {
+    Application.Storage.deleteValue(SolarPowerView.CAL_KEY);
+    Application.Storage.deleteValue(SolarPowerView.CAL_PENDING_KEY);
+    Application.Storage.deleteValue(SolarPowerView.LEGACY_SAVING_KEY);
+    Application.Storage.deleteValue(SolarPowerView.LEGACY_DRAIN_KEY);
+}
+
+// One continuous activity alternating twenty minutes of shade and sun at whole
+// percent, fed from `fromSecond` to `toSecond`, so a stop and resume can be
+// simulated without the battery jumping back to where it started.
+function feedViewActivity(view as SolarPowerView, fromSecond as Number, toSecond as Number) as Void {
+    var level = 90.5;
+    for (var t = 0; t < toSecond; t++) {
+        var sun = ((t / 1200) % 2 == 0) ? 0 : 100;
+        level -= (8.0 - (4.0 * sun / 100.0)) / 3600.0;
+        if (t >= fromSecond) {
+            view.addSampleForTest(sun, level.toNumber().toFloat());
+        }
+    }
+}
+
+(:test)
+function testAnActivityIsCommittedExactlyOnceThroughStopsAndResumes(logger as Logger) as Boolean {
+    gSkipFitRecording = true;
+    clearCalibrationStorage();
+    var view = new SolarPowerView();
+    view.beginActivityForTest(1000);
+    feedViewActivity(view, 0, 3600);
+    view.onTimerStop();                 // snapshot written
+    feedViewActivity(view, 3600, 7200); // resumed
+    view.onTimerStop();                 // snapshot written over itself
+    var expected = view.calibrationForTest();
+    Test.assertMessage(expected[0] == 0.0, "nothing is committed while the activity runs");
+    view.onTimerReset();                // activity ends
+    var committed = view.calibrationForTest();
+    logger.debug("committed dof " + committed[0].format("%.0f") + ", drain hours " + committed[5].format("%.2f"));
+    Test.assertMessage(committed[0] > 0.0, "the activity must contribute");
+
+    var next = new SolarPowerView();
+    var loaded = next.calibrationForTest();
+    Test.assertMessage(loaded[0] == committed[0] && loaded[1] == committed[1] && loaded[5] == committed[5],
+        "the next activity must load exactly what was committed, not a double count");
+    Test.assertMessage(Application.Storage.getValue(SolarPowerView.CAL_PENDING_KEY) == null,
+        "no snapshot may survive its own activity's end");
+    next.onTimerReset();                // an empty activity changes nothing
+    Test.assertMessage(next.calibrationForTest()[0] == committed[0], "an empty activity adds nothing");
+    clearCalibrationStorage();
+    return true;
+}
+
+(:test)
+function testACrashedActivityIsFoldedInByTheNextOne(logger as Logger) as Boolean {
+    gSkipFitRecording = true;
+    clearCalibrationStorage();
+    var crashed = new SolarPowerView();
+    crashed.beginActivityForTest(1000);
+    feedViewActivity(crashed, 0, 7200);
+    crashed.onTimerStop();              // snapshot written, then no onTimerReset ever arrives
+    var snapshotDof = (Application.Storage.getValue(SolarPowerView.CAL_PENDING_KEY) as Array)[2];
+
+    var next = new SolarPowerView();
+    Test.assertMessage(next.calibrationForTest()[0] == 0.0, "nothing committed before the next activity starts");
+    next.beginActivityForTest(2000);
+    Test.assertMessage(next.calibrationForTest()[0] == (snapshotDof as Numeric).toFloat(),
+        "the crashed activity's snapshot must be folded in once the next activity starts");
+    Test.assertMessage(Application.Storage.getValue(SolarPowerView.CAL_PENDING_KEY) == null,
+        "and removed so it cannot be folded in again");
+    next.onTimerReset();
+    var again = new SolarPowerView();
+    Test.assertMessage(again.calibrationForTest()[0] == (snapshotDof as Numeric).toFloat(),
+        "still counted exactly once after that activity ends");
+    clearCalibrationStorage();
+    return true;
+}
+
+(:test)
+function testARestartedFieldDoesNotRecountItsOwnActivity(logger as Logger) as Boolean {
+    gSkipFitRecording = true;
+    clearCalibrationStorage();
+    var first = new SolarPowerView();
+    first.beginActivityForTest(1000);
+    feedViewActivity(first, 0, 7200);
+    first.onTimerStop();
+
+    // The same activity, the field reloaded mid-way.
+    var reloaded = new SolarPowerView();
+    reloaded.beginActivityForTest(1000);
+    Test.assertMessage(reloaded.calibrationForTest()[0] == 0.0,
+        "an activity's own snapshot must never be folded into itself");
+    Test.assertMessage(Application.Storage.getValue(SolarPowerView.CAL_PENDING_KEY) != null,
+        "and must be left in place");
+    clearCalibrationStorage();
+    return true;
+}
+
+(:test)
+function testTheFirstReleasesSunBonusIsCarriedForwardOnce(logger as Logger) as Boolean {
+    // Exactly what the first release wrote: two floats under their own keys.
+    gSkipFitRecording = true;
+    clearCalibrationStorage();
+    Application.Storage.setValue(SolarPowerView.LEGACY_SAVING_KEY, 3.0);
+    Application.Storage.setValue(SolarPowerView.LEGACY_DRAIN_KEY, 5.0);
+    var view = new SolarPowerView();
+    var c = view.calibrationForTest();
+    Test.assertMessage(c[0] == 11.0 && c[1] == BatteryModel.REG_MIN_VARIATION,
+        "carried at the least evidence that release could have saved it from");
+    Test.assertMessage(c[5] == 0.0 && c[6] == 0.0,
+        "its drain is not carried: the hours behind it were never recorded");
+    var saving = view.effectiveSavingForTest();
+    Test.assertMessage(saving != null && (saving - 3.0).abs() < 0.001,
+        "the saving the user already had must survive the update");
+    Test.assertMessage(Application.Storage.getValue(SolarPowerView.LEGACY_SAVING_KEY) == null
+        && Application.Storage.getValue(SolarPowerView.LEGACY_DRAIN_KEY) == null,
+        "the old keys must be removed once carried");
+
+    var again = new SolarPowerView();
+    var reloaded = again.calibrationForTest();
+    Test.assertMessage(reloaded[0] == 11.0 && reloaded[2] == c[2], "carried exactly once");
+    clearCalibrationStorage();
+    return true;
+}
+
+(:test)
+function testALegacySaveNeverOverridesOrJoinsNewerCalibration(logger as Logger) as Boolean {
+    gSkipFitRecording = true;
+    clearCalibrationStorage();
+    // Interrupted between writing the carried calibration and removing the old
+    // keys: the committed one is kept and the old value is not added again.
+    var c = calibrationWith(2.5, 4.0);
+    Application.Storage.setValue(SolarPowerView.CAL_KEY,
+        [SolarPowerView.CAL_VERSION, c[0], c[1], c[2], c[3], c[4], c[5], c[6]] as Array<Numeric>);
+    Application.Storage.setValue(SolarPowerView.LEGACY_SAVING_KEY, 9.0);
+    Application.Storage.setValue(SolarPowerView.LEGACY_DRAIN_KEY, 5.0);
+    var view = new SolarPowerView();
+    var loaded = view.calibrationForTest();
+    var saving = view.effectiveSavingForTest();
+    Test.assertMessage(loaded[0] == 11.0 && saving != null && (saving - 2.5).abs() < 0.001,
+        "newer calibration must win untouched");
+    Test.assertMessage(Application.Storage.getValue(SolarPowerView.LEGACY_SAVING_KEY) == null,
+        "and the old keys still removed");
+
+    // Anything that is not a saving the first release could have written.
+    clearCalibrationStorage();
+    Application.Storage.setValue(SolarPowerView.LEGACY_SAVING_KEY, "3.0");
+    var junk = new SolarPowerView();
+    Test.assertMessage(junk.calibrationForTest()[0] == 0.0
+        && Application.Storage.getValue(SolarPowerView.CAL_KEY) == null, "a non-number is ignored");
+    Test.assertMessage(Application.Storage.getValue(SolarPowerView.LEGACY_SAVING_KEY) == null, "and removed");
+    Test.assertMessage(SolarModel.calibrationFromLegacy(0.0) == null
+        && SolarModel.calibrationFromLegacy(-2.0) == null, "no saving is no evidence");
+    clearCalibrationStorage();
+    return true;
+}
+
+(:test)
+function testSunBonusPageRendersFromCarriedCalibration(logger as Logger) as Boolean {
+    // The pooled path adds calls under the bonus page's draw, which is where
+    // this field has overflowed its stack before. Render it for real.
+    gSkipFitRecording = true;
+    clearCalibrationStorage();
+    var c = calibrationWith(2.5, 4.0);
+    Application.Storage.setValue(SolarPowerView.CAL_KEY,
+        [SolarPowerView.CAL_VERSION, c[0], c[1], c[2], c[3], c[4], c[5], c[6]] as Array<Numeric>);
+    var view = new SolarPowerView();
+    view.setFixForTest(TEST_LAT_RAD, TEST_LON_RAD);
+    for (var i = 0; i < 1200; i++) {
+        view.addSampleForTest(70, 80.0);
+    }
+    var saving = view.effectiveSavingForTest();
+    Test.assertMessage(saving != null && (saving - 2.5).abs() < 0.01,
+        "the loaded calibration must drive the page");
+    view.setPageForTest(5);
+    var ok = renderAt(view, 280, 280) && renderAt(view, 260, 260) && renderAt(view, 240, 240);
+    Test.assertMessage(ok, "the bonus page must render at every supported size");
+    clearCalibrationStorage();
+    return true;
+}
+
 
 // -- drain ceiling ---------------------------------------------------------
 //

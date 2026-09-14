@@ -54,13 +54,31 @@ class SolarModel {
     private var _batBucket as Number = 0;
     private var _battery as BatteryModel;
 
-    // What previous activities taught this watch about itself. The solar benefit
-    // needs hours of varied sunlight to fit, so on any normal ride it is still
-    // converging when the activity ends and the wearer never sees it. Carrying
-    // the fitted values forward means the number is available from the first
-    // minute of the next one - still measured on this watch, just not today.
-    private var _learnedSaving as Float = -1.0;
-    private var _learnedDrain as Float = -1.0;
+    // What earlier activities taught this watch about itself, as
+    // [dof, cxx, cxy, minLight, maxLight, drainHours, drainPercent] - see
+    // BatteryModel.calibrationContribution(). The solar benefit needs a lot of
+    // varied sunlight to fit, far more than one ordinary activity holds, so the
+    // evidence is carried forward and added to. reset() leaves this alone: it
+    // belongs to the watch, not to any one activity.
+    static const CAL_SIZE = 7;
+    // Older evidence is scaled back once this many degrees of freedom have
+    // accumulated, roughly the last 120 battery-step gaps, so the coefficient
+    // follows the watch as its battery ages instead of being anchored to its
+    // first weeks.
+    static const CAL_MAX_DOF = 120.0;
+    // The learned drain follows the most recent measured hours the same way.
+    static const CAL_MAX_DRAIN_HOURS = 20.0;
+    // A learned drain from less measured time than this is one quantised step
+    // of evidence, too coarse to turn saved charge into minutes.
+    static const CAL_MIN_DRAIN_HOURS = 1.0;
+
+    private var _calDof as Float = 0.0;
+    private var _calCxx as Float = 0.0;
+    private var _calCxy as Float = 0.0;
+    private var _calMinX as Float = 1000.0;
+    private var _calMaxX as Float = -1000.0;
+    private var _calDrainHours as Float = 0.0;
+    private var _calDrainPercent as Float = 0.0;
 
     function initialize(samplePeriod as Number) {
         _samplePeriod = (samplePeriod < 1) ? 1 : samplePeriod;
@@ -246,19 +264,126 @@ class SolarModel {
         return ((_harvestSeconds / 3600.0) * minutesPerFullSunHour).toNumber();
     }
 
-    // Seed the fitted values measured on previous activities.
-    function setLearned(savingPerHour as Float, drainPerHour as Float) as Void {
-        _learnedSaving = savingPerHour;
-        _learnedDrain = drainPerHour;
+    // -- calibration carried between activities ---------------------------
+
+    static function emptyCalibration() as Array<Float> {
+        return [0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0, 0.0] as Array<Float>;
     }
 
-    // The benefit coefficient in use, and whether it came from this activity.
+    function setCalibration(c as Array<Float>) as Void {
+        _calDof = c[0];
+        _calCxx = c[1];
+        _calCxy = c[2];
+        _calMinX = c[3];
+        _calMaxX = c[4];
+        _calDrainHours = c[5];
+        _calDrainPercent = c[6];
+    }
+
+    function calibration() as Array<Float> {
+        return [_calDof, _calCxx, _calCxy, _calMinX, _calMaxX,
+                _calDrainHours, _calDrainPercent] as Array<Float>;
+    }
+
+    // What this activity would add if it ended now.
+    function activityCalibration() as Array<Float> {
+        return _battery.calibrationContribution();
+    }
+
+    // Folds one activity's contribution into the carried calibration.
+    //
+    // Sums add, which is what makes the pooled fit exact rather than an average
+    // of per-activity fits. Past the caps the older evidence is scaled back
+    // first, so a new activity always counts in full; scaling co-deviations and
+    // degrees of freedom together leaves the older evidence's own slope intact.
+    static function mergeCalibration(prior as Array<Float>, add as Array<Float>) as Array<Float> {
+        var out = emptyCalibration();
+        var keep = 1.0;
+        if (prior[0] > 0.0 && (prior[0] + add[0]) > CAL_MAX_DOF) {
+            keep = (CAL_MAX_DOF - add[0]) / prior[0];
+            if (keep < 0.0) {
+                keep = 0.0;
+            }
+        }
+        out[0] = (prior[0] * keep) + add[0];
+        out[1] = (prior[1] * keep) + add[1];
+        out[2] = (prior[2] * keep) + add[2];
+        if (keep > 0.0) {
+            out[3] = (prior[3] < add[3]) ? prior[3] : add[3];
+            out[4] = (prior[4] > add[4]) ? prior[4] : add[4];
+        } else {
+            out[3] = add[3];
+            out[4] = add[4];
+        }
+
+        var keepDrain = 1.0;
+        if (prior[5] > 0.0 && (prior[5] + add[5]) > CAL_MAX_DRAIN_HOURS) {
+            keepDrain = (CAL_MAX_DRAIN_HOURS - add[5]) / prior[5];
+            if (keepDrain < 0.0) {
+                keepDrain = 0.0;
+            }
+        }
+        out[5] = (prior[5] * keepDrain) + add[5];
+        out[6] = (prior[6] * keepDrain) + add[6];
+        return out;
+    }
+
+    // A stored calibration read back, or null if it is not one. Storage is the
+    // only way anything outside this activity reaches the model, so it is
+    // checked as untrusted input rather than assumed well formed.
+    static function calibrationFrom(values as Array, offset as Number) as Array<Float>? {
+        if (values.size() < offset + CAL_SIZE) {
+            return null;
+        }
+        var c = emptyCalibration();
+        for (var i = 0; i < CAL_SIZE; i++) {
+            var v = values[offset + i];
+            if (!(v instanceof Lang.Float || v instanceof Lang.Number || v instanceof Lang.Double)) {
+                return null;
+            }
+            c[i] = (v as Numeric).toFloat();
+        }
+        if (c[0] < 0.0 || c[1] < 0.0 || c[5] < 0.0) {
+            return null;
+        }
+        return c;
+    }
+
+    // A Sun Bonus saved by the first release, which kept only the fitted saving.
+    //
+    // That release only ever saved one from an activity that passed the
+    // single-activity rules, so the least evidence that could have produced it
+    // is known exactly: eleven degrees of freedom and the minimum light
+    // variation. Carried forward at that weight it keeps the number the user
+    // already had, and anything measured afterwards outweighs it rather than
+    // being outweighed. The light range was not kept; any 25 point span passes
+    // the one gate the range is used for, just as the original did. Its drain
+    // is not carried at all, because the hours behind it were never recorded.
+    static function calibrationFromLegacy(saving as Float) as Array<Float>? {
+        if (!(saving > 0.05)) {
+            return null;
+        }
+        var c = emptyCalibration();
+        c[0] = (BatteryModel.REG_MIN_INTERVALS - 1).toFloat();
+        c[1] = BatteryModel.REG_MIN_VARIATION;
+        c[2] = -(saving / 100.0) * BatteryModel.REG_MIN_VARIATION;
+        c[3] = 0.0;
+        c[4] = BatteryModel.REG_MIN_SPREAD;
+        return c;
+    }
+
+    // The saving at full sun that the page quotes: this activity's own fit if
+    // it has one, otherwise the fit across this activity and the earlier ones.
     function effectiveSaving() as Float? {
         var fresh = solarOffsetPerHour();
         if (fresh != null) {
             return fresh;
         }
-        return (_learnedSaving > 0.0) ? _learnedSaving : null;
+        return pooledSavingPerHour();
+    }
+
+    function pooledSavingPerHour() as Float? {
+        return _battery.pooledSavingPerHour(_calDof, _calCxx, _calCxy, _calMinX, _calMaxX);
     }
 
     function effectiveDrain() as Float? {
@@ -266,7 +391,16 @@ class SolarModel {
         if (fresh != null) {
             return fresh;
         }
-        return (_learnedDrain > 0.0) ? _learnedDrain : null;
+        return learnedDrainPerHour();
+    }
+
+    // Total net percent over total measured hours across earlier activities.
+    function learnedDrainPerHour() as Float? {
+        if (_calDrainHours < CAL_MIN_DRAIN_HOURS) {
+            return null;
+        }
+        var drain = _calDrainPercent / _calDrainHours;
+        return (drain > 0.0) ? drain : null;
     }
 
     // True when the bonus rests on values carried over rather than measured here.
