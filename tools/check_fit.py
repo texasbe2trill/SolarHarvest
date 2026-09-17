@@ -73,6 +73,7 @@ FALLBACK_GATES = {  # source/BatteryModel.mc and source/SolarGeometry.mc
 ALWAYS_SESSION = ("full_sun", "avg_solar", "peak_solar", "time_in_sun", "battery_used")
 MEASURED_SESSION = ("battery_rate", "projected_hours", "solar_saving")
 LAP_FIELDS = ("lap_full_sun", "lap_avg_solar")
+EXPERIMENT_FIELDS = ("battery_days", "battery_raw")
 TIMER_STOPS = ("stop", "stop_all", "stop_disable", "stop_disable_all")
 
 # The watch fits solar saving against the raw sensor, but the file only holds
@@ -248,6 +249,37 @@ def expected_measurements(edges, active_total, g):
     return rate, runtime, best, len(intervals), spread
 
 
+def gauge_report(records):
+    """The dev branch's experiment: do the raw gauge values move between the
+    whole percent steps? Says nothing when the file holds neither field."""
+    series = {name: [(r.get("battery"), r[name]) for r in records if r.get(name) is not None]
+              for name in ("battery_raw", "battery_days")}
+    if not any(series.values()):
+        return
+    heading("EXPERIMENT: IS THERE A FINER BATTERY GAUGE?")
+    for name, pairs in series.items():
+        if not pairs:
+            print(f"  {name}: not recorded (this watch gives none)")
+            continue
+        readings = [value for _, value in pairs]
+        changes = [abs(b - a) for a, b in zip(readings, readings[1:]) if b != a]
+        # Changes that happened while the whole percent level stood still are
+        # the ones that would make a finer gauge.
+        between = sum(1 for (la, a), (lb, b) in zip(pairs, pairs[1:]) if b != a and la == lb)
+        steps = sum(1 for (la, _), (lb, _) in zip(pairs, pairs[1:]) if la != lb)
+        print(f"  {name}: {len(readings)} readings, {min(readings):.4f} to {max(readings):.4f}, "
+              f"{len(set(readings))} distinct values")
+        if changes:
+            print(f"    changed {len(changes)} times, smallest change {min(changes):.4f}; "
+                  f"{between} of them between whole percent steps ({steps} steps in the file)")
+        else:
+            print("    never changed")
+        if between >= 3:
+            print("    >> FINER THAN THE WHOLE PERCENT: this value can be measured against.")
+        else:
+            print("    no finer than the whole percent on this recording")
+
+
 def heading(title):
     print()
     print("=" * 70)
@@ -315,6 +347,10 @@ def main(path):
                             f"with a display flag, so Connect will never show it")
     for name, (field_id, mesg) in fields.items():
         if name not in declared:
+            if name in EXPERIMENT_FIELDS:
+                # Only a build of the experiment branch writes these.
+                not_measured.append(f"{name}: recorded only by the battery gauge experiment build")
+                continue
             print(f"  MISSING: {name} (id {field_id}, expected on {mesg})")
             problems.append(f"{name} was never declared")
 
@@ -416,6 +452,8 @@ def main(path):
         else:
             not_measured.append(f"catching_percent: the sun stayed at or below "
                                 f"{max(elevation)} degrees; catching needs {minimum:.0f}")
+
+    gauge_report(records)
 
     heading("RESULT")
     if problems:

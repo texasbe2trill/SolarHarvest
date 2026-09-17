@@ -151,4 +151,24 @@
               displayInActivitySummary="true"
               dataLabel="@Strings.FitProjectedHours"
               unitLabel="@Strings.UnitHours" />
+
+    <!-- id 14: battery_days, RECORD - EXPERIMENT: the watch's days remaining, unrounded. -->
+    <fitField id="14"
+              sortOrder="14"
+              precision="2"
+              displayInChart="true"
+              chartTitle="@Strings.FitBatteryDays"
+              dataLabel="@Strings.FitBatteryDays"
+              unitLabel="@Strings.UnitDays"
+              fillColor="#55AAFF" />
+
+    <!-- id 15: battery_raw, RECORD - EXPERIMENT: the level as a float, unrounded. -->
+    <fitField id="15"
+              sortOrder="15"
+              precision="2"
+              displayInChart="true"
+              chartTitle="@Strings.FitBatteryRaw"
+              dataLabel="@Strings.FitBatteryRaw"
+              unitLabel="@Strings.UnitPercent"
+              fillColor="#00AA55" />
 </fitContributions>

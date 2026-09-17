@@ -32,6 +32,9 @@
     <string id="FitCatching">Catching (Sun Caught)</string>
     <string id="FitSunElevation">Sun Elevation</string>
     <string id="FitProjectedHours">Runtime Left</string>
+    <string id="FitBatteryDays">Battery Days (raw)</string>
+    <string id="FitBatteryRaw">Battery (raw)</string>
+    <string id="UnitDays">d</string>
     <string id="UnitPercent">%</string>
     <string id="UnitMinutes">min</string>
     <string id="UnitPercentPerHour">%/h</string>

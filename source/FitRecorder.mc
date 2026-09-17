@@ -48,12 +48,21 @@ class FitRecorder {
     static const ID_CATCHING = 11;
     static const ID_ELEVATION = 12;
     static const ID_PROJECTED_HOURS = 13;
+    // EXPERIMENT (dev branch). The watch reports its level in whole percents,
+    // too coarse to measure what the sun saves on a short activity. These two
+    // put the gauge's raw values in the record, as floats and every second, to
+    // answer one question from one walk: does the days remaining figure, or
+    // the level itself, move between the whole percent steps?
+    static const ID_BATTERY_DAYS = 14;
+    static const ID_BATTERY_RAW = 15;
 
     // Record stream: the curves worth plotting against distance and time.
     private var _solar as Field?;
     private var _battery as Field?;
     private var _catching as Field?;
     private var _elevation as Field?;
+    private var _days as Field?;
+    private var _raw as Field?;
 
     // Session summary.
     private var _fullSun as Field?;
@@ -88,6 +97,11 @@ class FitRecorder {
         // activity in twenty where solar intensity itself barely moves.
         _elevation = make(field, "sun_elevation", ID_ELEVATION, FitContributor.DATA_TYPE_SINT8,
             FitContributor.MESG_TYPE_RECORD, "deg");
+
+        _days = make(field, "battery_days", ID_BATTERY_DAYS, FitContributor.DATA_TYPE_FLOAT,
+            FitContributor.MESG_TYPE_RECORD, "d");
+        _raw = make(field, "battery_raw", ID_BATTERY_RAW, FitContributor.DATA_TYPE_FLOAT,
+            FitContributor.MESG_TYPE_RECORD, "%");
 
         _fullSun = make(field, "full_sun", ID_SESSION_FULL_SUN, FitContributor.DATA_TYPE_UINT16,
             FitContributor.MESG_TYPE_SESSION, "min");
@@ -170,6 +184,17 @@ class FitRecorder {
         }
 
         updateLap(model);
+    }
+
+    // The gauge as the watch gives it, unrounded. days is negative on a watch
+    // that reports none, and is then left out of the record.
+    function updateGauge(battery as Float, days as Float) as Void {
+        if (battery >= 0.0) {
+            set(_raw, battery);
+        }
+        if (days >= 0.0) {
+            set(_days, days);
+        }
     }
 
     // Firmware writes the lap message around the onTimerLap() callback and the

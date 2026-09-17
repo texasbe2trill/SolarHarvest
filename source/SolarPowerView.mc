@@ -349,6 +349,7 @@ class SolarPowerView extends WatchUi.DataField {
         var fit = _fit;
         if (fit != null) {
             fit.update(_model, _elevation, _hasFix);
+            fit.updateGauge(stats.battery, _daysLeft);
         }
         updateSunTimes(info);
         readHeading(info);
