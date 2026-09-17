@@ -2343,7 +2343,7 @@ class SolarPowerView extends WatchUi.DataField {
     private function storeCalibration(c as Array<Float>) as Void {
         _model.setCalibration(c);
         Application.Storage.setValue(CAL_KEY,
-            [CAL_VERSION, c[0], c[1], c[2], c[3], c[4], c[5], c[6]] as Array<Numeric>);
+            [CAL_VERSION, c[0], c[1], c[2], c[3], c[4], c[5], c[6], SolarModel.cyyOf(c)] as Array<Numeric>);
     }
 
     private function percentText(fraction as Float) as String {

@@ -756,6 +756,63 @@ function testSolarSavingNeedsRealEvidence(logger as Logger) as Boolean {
     return true;
 }
 
+// The early rule: a day whose drain plainly followed its light earns a
+// saving well before twelve intervals. Whole-percent levels as a watch
+// reports them, shade and sun in quarter hour blocks, 6%/h dark and 3%/h in
+// full sun: a handful of battery steps is enough.
+(:test)
+function testSolarSavingArrivesEarlyWhenTheContrastIsStrong(logger as Logger) as Boolean {
+    var model = new SolarModel(1);
+    var level = 90.5;
+    var seenAt = -1;
+    var t = 0;
+    while (t < 36000 && model.batteryRegressionSamples() < BatteryModel.REG_MIN_INTERVALS) {
+        var sun = ((t / 900) % 2 == 0) ? 0 : 100;
+        level -= (6.0 - (3.0 * sun / 100.0)) / 3600.0;
+        model.addSample(sun, level.toNumber().toFloat(), false);
+        if (seenAt < 0 && model.solarOffsetPerHour() != null) {
+            seenAt = model.batteryRegressionSamples();
+        }
+        t += 1;
+    }
+    var saving = model.solarOffsetPerHour();
+    if (saving == null || seenAt < 0) {
+        Test.assertMessage(false, "a strong contrast should fit before the classic count");
+        return false;
+    }
+    logger.debug("early saving " + saving.format("%.2f") + "%/h after " + seenAt.format("%d") + " intervals");
+    Test.assertMessage(seenAt < BatteryModel.REG_MIN_INTERVALS, "the fit arrived before twelve intervals");
+    Test.assertMessage(seenAt >= BatteryModel.REG_EARLY_INTERVALS, "but never before the early floor");
+    Test.assertMessage((saving - 3.0).abs() < 1.0, "and it is the true 3%/h, not a guess");
+    return true;
+}
+
+// The other half of the rule: light that varies while the drain merely
+// wanders (a jittery 4%/h with no sun effect) never passes the early gate,
+// so the saving stays withheld until the classic evidence would have it.
+(:test)
+function testSolarSavingWaitsWhenTheDrainIgnoresTheLight(logger as Logger) as Boolean {
+    var model = new SolarModel(1);
+    var level = 90.5;
+    var seed = 12345l;
+    var t = 0;
+    while (t < 36000 && model.batteryRegressionSamples() < BatteryModel.REG_MIN_INTERVALS - 2) {
+        var sun = ((t / 900) % 2 == 0) ? 0 : 100;
+        // Park and Miller on Longs, so the product does not wrap; a new
+        // draw every minute, so the jitter is per interval, not per second.
+        if (t % 60 == 0) {
+            seed = (seed * 16807l) % 2147483647l;
+        }
+        var jitter = ((seed % 100l).toNumber()) / 50.0;          // 0 to 2%/h
+        level -= (3.0 + jitter) / 3600.0;
+        model.addSample(sun, level.toNumber().toFloat(), false);
+        Test.assertMessage(model.solarOffsetPerHour() == null,
+            "drain that ignores the light earns no early saving at " + model.batteryRegressionSamples().format("%d") + " intervals");
+        t += 1;
+    }
+    return true;
+}
+
 (:test)
 function testSolarSavingWithheldWithoutSpread(logger as Logger) as Boolean {
     // Constant sunlight carries no information about what sun is worth.
@@ -2107,12 +2164,19 @@ function calibrationWith(savingPerHour as Float, drainPerHour as Float) as Array
 // hour saved at full sun on top of `darkDrain`, alternating shade and sun.
 function feedWholePercent(model as SolarModel, darkDrain as Float, benefit as Float,
                           shadeMinutes as Number, sunMinutes as Number, seconds as Number) as Void {
+    feedWholePercentBetween(model, darkDrain, benefit, shadeMinutes, sunMinutes, seconds, 0, 100);
+}
+
+// The same, with the shade and the sun at chosen intensities.
+function feedWholePercentBetween(model as SolarModel, darkDrain as Float, benefit as Float,
+                                 shadeMinutes as Number, sunMinutes as Number, seconds as Number,
+                                 shade as Number, sun as Number) as Void {
     var level = 90.5;
     var cycle = (shadeMinutes + sunMinutes) * 60;
     for (var t = 0; t < seconds; t++) {
-        var sun = ((t % cycle) < (shadeMinutes * 60)) ? 0 : 100;
-        level -= (darkDrain - (benefit * sun / 100.0)) / 3600.0;
-        model.addSample(sun, level.toNumber().toFloat(), false);
+        var light = ((t % cycle) < (shadeMinutes * 60)) ? shade : sun;
+        level -= (darkDrain - (benefit * light / 100.0)) / 3600.0;
+        model.addSample(light, level.toNumber().toFloat(), false);
     }
 }
 
@@ -2122,10 +2186,13 @@ function testPooledFitIgnoresEachActivitysOwnBaseline(logger as Logger) as Boole
     // shade. B: a hungry one, mostly in sun. Both gain the same 3%/h at full
     // sun, but a plain pooled fit sees low drain in the dark and high drain in
     // the sun and concludes sunlight costs battery.
+    // Each activity's own light varies by less than the early rule's 20
+    // points, so neither can fit alone under either rule; between them the
+    // light spans 60 points.
     var a = new SolarModel(1);
-    feedWholePercent(a, 4.0, 3.0, 45, 15, 10200);
+    feedWholePercentBetween(a, 4.0, 3.0, 45, 15, 10200, 0, 15);
     var b = new SolarModel(1);
-    feedWholePercent(b, 12.0, 3.0, 15, 45, 3900);
+    feedWholePercentBetween(b, 12.0, 3.0, 15, 45, 3900, 45, 60);
 
     var ca = a.activityCalibration();
     var cb = b.activityCalibration();

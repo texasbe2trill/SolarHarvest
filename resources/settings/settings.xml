@@ -6,7 +6,7 @@
             <listEntry value="2">@Strings.ThemeLight</listEntry>
         </settingConfig>
     </setting>
-    <setting propertyKey="@Properties.pageMode" title="@Strings.SettingPage">
+    <setting propertyKey="@Properties.pageMode" title="@Strings.SettingPage" prompt="@Strings.SettingPagePrompt">
         <settingConfig type="list">
             <listEntry value="0">@Strings.PageAuto</listEntry>
             <listEntry value="1">@Strings.PageNow</listEntry>
@@ -18,13 +18,13 @@
             <listEntry value="7">@Strings.PageCompass</listEntry>
         </settingConfig>
     </setting>
-    <setting propertyKey="@Properties.lapPaging" title="@Strings.SettingLapPaging">
+    <setting propertyKey="@Properties.cycleSeconds" title="@Strings.SettingCycle">
+        <settingConfig type="numeric" min="3" max="60" />
+    </setting>
+    <setting propertyKey="@Properties.lapPaging" title="@Strings.SettingLapPaging" prompt="@Strings.SettingLapPagingPrompt">
         <settingConfig type="boolean" />
     </setting>
     <setting propertyKey="@Properties.alerts" title="@Strings.SettingAlerts">
         <settingConfig type="boolean" />
-    </setting>
-    <setting propertyKey="@Properties.cycleSeconds" title="@Strings.SettingCycle">
-        <settingConfig type="numeric" min="3" max="60" />
     </setting>
 </settings>

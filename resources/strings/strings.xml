@@ -5,8 +5,10 @@
     <string id="ThemeDark">Always dark</string>
     <string id="ThemeLight">Always light</string>
     <string id="SettingPage">Page</string>
-    <string id="SettingCycle">Auto-cycle seconds</string>
-    <string id="SettingLapPaging">Lap button changes page</string>
+    <string id="SettingCycle">Auto-cycle: seconds per page (3 to 60)</string>
+    <string id="SettingLapPaging">Lap button also changes page</string>
+    <string id="SettingLapPagingPrompt">The watch records a lap either way: no data field can stop the lap button doing its job. Leave this off and let Auto cycle turn the pages, or pin one page above.</string>
+    <string id="SettingPagePrompt">Auto cycle turns the pages on its own, no button needed. Or pin the one page you want.</string>
     <string id="PageAuto">Auto cycle</string>
     <string id="PageNow">Solar now</string>
     <string id="PageTrend">Full-sun time</string>

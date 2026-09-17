@@ -45,6 +45,14 @@ class BatteryModel {
     // this much, so it is never weaker than the weakest single activity the
     // rules already accept.
     static const REG_MIN_VARIATION = 312.5;
+    // The early rule: fewer intervals when the fit itself is sure. The slope
+    // has to stand at least REG_T of its own standard errors away from zero,
+    // judged against the intervals' scatter about the fitted line, so a day
+    // whose light varied and whose drain followed it can speak after five
+    // intervals, and a day whose drain merely wandered cannot, however long.
+    static const REG_EARLY_INTERVALS = 5;
+    static const REG_EARLY_SPREAD = 20.0;
+    static const REG_T = 3.0;
     // Fallback quantum before the reporting resolution has been observed.
     static const DEFAULT_QUANTUM = 0.05;
 
@@ -88,6 +96,7 @@ class BatteryModel {
     private var _meanY as Float = 0.0;
     private var _cxx as Float = 0.0;
     private var _cxy as Float = 0.0;
+    private var _cyy as Float = 0.0;
     private var _minX as Float = 0.0;
     private var _maxX as Float = 0.0;
     private var _solSum as Float = 0.0;
@@ -121,6 +130,7 @@ class BatteryModel {
         _meanY = 0.0;
         _cxx = 0.0;
         _cxy = 0.0;
+        _cyy = 0.0;
         _minX = 0.0;
         _maxX = 0.0;
         _solSum = 0.0;
@@ -224,10 +234,12 @@ class BatteryModel {
             }
             _n += 1;
             var dx = x - _meanX;
+            var dy = y - _meanY;
             _meanX += dx / _n;
-            _meanY += (y - _meanY) / _n;
+            _meanY += dy / _n;
             _cxx += dx * (x - _meanX);
             _cxy += dx * (y - _meanY);
+            _cyy += dy * (y - _meanY);
         }
 
         _lastT = t;
@@ -346,12 +358,32 @@ class BatteryModel {
     // Percentage points per hour of drain avoided at full sun, fitted across the
     // measured intervals rather than differenced between two noisy buckets.
     // Null unless the fit rests on enough intervals spanning enough sunlight.
+    // The same rules as pooledSavingPerHour() with no prior, written out
+    // rather than delegated, and with as few locals as the arithmetic allows:
+    // both are leaves under onUpdate, where the stack is shallow enough that
+    // one more frame, or a fatter one, overflows it in the render tests.
     function solarSavingPerHour() as Float? {
-        if (_n < REG_MIN_INTERVALS || (_maxX - _minX) < REG_MIN_SPREAD || _cxx < 0.000001) {
+        if (_n < 2 || _cxx < 0.000001) {
             return null;
         }
-        var saving = -(_cxy / _cxx) * 100.0;
-        return (saving > 0.05) ? saving : null;
+        var dof = (_n - 1).toFloat();
+        var spread = _maxX - _minX;
+        if (!(dof >= (REG_MIN_INTERVALS - 1) && spread >= REG_MIN_SPREAD)) {
+            if (dof < (REG_EARLY_INTERVALS - 1) || spread < REG_EARLY_SPREAD) {
+                return null;
+            }
+            // residual scatter about the fitted line, then the t test as
+            // cxy^2 (dof - 1) >= T^2 residual cxx, which needs no square root
+            spread = _cyy - ((_cxy * _cxy) / _cxx);
+            if (spread < 0.0) {
+                spread = 0.0;
+            }
+            if ((_cxy * _cxy) * (dof - 1.0) < (REG_T * REG_T) * spread * _cxx) {
+                return null;
+            }
+        }
+        dof = -(_cxy / _cxx) * 100.0;
+        return (dof > 0.05) ? dof : null;
     }
 
     // Drain the watch would show with no sun at all, from the same fit.
@@ -377,46 +409,58 @@ class BatteryModel {
     //
     // With no prior this is exactly solarSavingPerHour(), gates included.
     function pooledSavingPerHour(priorDof as Float, priorCxx as Float, priorCxy as Float,
-                                 priorMinX as Float, priorMaxX as Float) as Float? {
+                                 priorMinX as Float, priorMaxX as Float, priorCyy as Float) as Float? {
         var dof = priorDof;
         var cxx = priorCxx;
         var cxy = priorCxy;
-        var lo = priorMinX;
-        var hi = priorMaxX;
+        var cyy = priorCyy;
+        var spread = priorMaxX - priorMinX;
         if (_n >= 2) {
             dof += _n - 1;
             cxx += _cxx;
             cxy += _cxy;
-            if (_minX < lo) {
-                lo = _minX;
-            }
-            if (_maxX > hi) {
-                hi = _maxX;
-            }
+            cyy += _cyy;
+            spread = ((_maxX > priorMaxX) ? _maxX : priorMaxX) - ((_minX < priorMinX) ? _minX : priorMinX);
         }
-        if (dof < REG_MIN_INTERVALS - 1 || (hi - lo) < REG_MIN_SPREAD
-            || cxx < REG_MIN_VARIATION) {
+        if (cxx < 0.000001) {
             return null;
         }
-        var saving = -(cxy / cxx) * 100.0;
-        return (saving > 0.05) ? saving : null;
+        // Two ways in: the classic rule with the variation floor for pooled
+        // evidence, or the early rule, the slope REG_T standard errors clear
+        // of zero against the intervals' scatter. Written out with the fewest
+        // locals: this runs under onUpdate, where the stack is shallow.
+        if (!(dof >= (REG_MIN_INTERVALS - 1) && spread >= REG_MIN_SPREAD && cxx >= REG_MIN_VARIATION)) {
+            if (dof < (REG_EARLY_INTERVALS - 1) || spread < REG_EARLY_SPREAD || cyy < 0.0) {
+                return null;
+            }
+            cyy -= (cxy * cxy) / cxx;
+            if (cyy < 0.0) {
+                cyy = 0.0;
+            }
+            if ((cxy * cxy) * (dof - 1.0) < (REG_T * REG_T) * cyy * cxx) {
+                return null;
+            }
+        }
+        cxy = -(cxy / cxx) * 100.0;
+        return (cxy > 0.05) ? cxy : null;
     }
 
     // What this activity can add to the cross-activity calibration, as
-    // [dof, cxx, cxy, minLight, maxLight, drainHours, drainPercent].
+    // [dof, cxx, cxy, minLight, maxLight, drainHours, drainPercent, cyy].
     //
     // Drain is kept as the measured window's hours and net percent rather than
     // as a rate, so combining activities gives total percent over total hours,
     // weighting each by how long it was actually measured. Only a confirmed
     // drain counts, the same evidence rule the RATE figure uses.
     function calibrationContribution() as Array<Float> {
-        var c = [0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0, 0.0] as Array<Float>;
+        var c = [0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0, 0.0, 0.0] as Array<Float>;
         if (_n >= 2) {
             c[0] = (_n - 1).toFloat();
             c[1] = _cxx;
             c[2] = _cxy;
             c[3] = _minX;
             c[4] = _maxX;
+            c[7] = _cyy;
         }
         if (drainPerHour() != null) {
             c[5] = (_lastT - _firstT) / 3600.0;

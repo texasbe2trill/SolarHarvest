@@ -55,12 +55,17 @@ class SolarModel {
     private var _battery as BatteryModel;
 
     // What earlier activities taught this watch about itself, as
-    // [dof, cxx, cxy, minLight, maxLight, drainHours, drainPercent] - see
+    // [dof, cxx, cxy, minLight, maxLight, drainHours, drainPercent, cyy] - see
     // BatteryModel.calibrationContribution(). The solar benefit needs a lot of
     // varied sunlight to fit, far more than one ordinary activity holds, so the
     // evidence is carried forward and added to. reset() leaves this alone: it
     // belongs to the watch, not to any one activity.
-    static const CAL_SIZE = 7;
+    static const CAL_SIZE = 8;
+    // Records written before cyy was kept have seven values; their scatter is
+    // taken as that of an average fit (half the drain's variation explained
+    // by the light), which lets the early rule weigh them without trusting
+    // them more than they earned.
+    static const CAL_LEGACY_SIZE = 7;
     // Older evidence is scaled back once this many degrees of freedom have
     // accumulated, roughly the last 120 battery-step gaps, so the coefficient
     // follows the watch as its battery ages instead of being anchored to its
@@ -79,6 +84,7 @@ class SolarModel {
     private var _calMaxX as Float = -1000.0;
     private var _calDrainHours as Float = 0.0;
     private var _calDrainPercent as Float = 0.0;
+    private var _calCyy as Float = 0.0;
 
     function initialize(samplePeriod as Number) {
         _samplePeriod = (samplePeriod < 1) ? 1 : samplePeriod;
@@ -267,7 +273,16 @@ class SolarModel {
     // -- calibration carried between activities ---------------------------
 
     static function emptyCalibration() as Array<Float> {
-        return [0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0, 0.0] as Array<Float>;
+        return [0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0, 0.0, 0.0] as Array<Float>;
+    }
+
+    // The scatter a record carries, or the average-fit assumption for one
+    // written before it was kept.
+    static function cyyOf(c as Array<Float>) as Float {
+        if (c.size() > CAL_LEGACY_SIZE) {
+            return c[7];
+        }
+        return (c[1] > 0.000001) ? (2.0 * c[2] * c[2]) / c[1] : 0.0;
     }
 
     function setCalibration(c as Array<Float>) as Void {
@@ -278,11 +293,12 @@ class SolarModel {
         _calMaxX = c[4];
         _calDrainHours = c[5];
         _calDrainPercent = c[6];
+        _calCyy = cyyOf(c);
     }
 
     function calibration() as Array<Float> {
         return [_calDof, _calCxx, _calCxy, _calMinX, _calMaxX,
-                _calDrainHours, _calDrainPercent] as Array<Float>;
+                _calDrainHours, _calDrainPercent, _calCyy] as Array<Float>;
     }
 
     // What this activity would add if it ended now.
@@ -308,6 +324,7 @@ class SolarModel {
         out[0] = (prior[0] * keep) + add[0];
         out[1] = (prior[1] * keep) + add[1];
         out[2] = (prior[2] * keep) + add[2];
+        out[7] = (cyyOf(prior) * keep) + cyyOf(add);
         if (keep > 0.0) {
             out[3] = (prior[3] < add[3]) ? prior[3] : add[3];
             out[4] = (prior[4] > add[4]) ? prior[4] : add[4];
@@ -332,19 +349,23 @@ class SolarModel {
     // only way anything outside this activity reaches the model, so it is
     // checked as untrusted input rather than assumed well formed.
     static function calibrationFrom(values as Array, offset as Number) as Array<Float>? {
-        if (values.size() < offset + CAL_SIZE) {
+        var size = (values.size() >= offset + CAL_SIZE) ? CAL_SIZE : CAL_LEGACY_SIZE;
+        if (values.size() < offset + size) {
             return null;
         }
         var c = emptyCalibration();
-        for (var i = 0; i < CAL_SIZE; i++) {
+        for (var i = 0; i < size; i++) {
             var v = values[offset + i];
             if (!(v instanceof Lang.Float || v instanceof Lang.Number || v instanceof Lang.Double)) {
                 return null;
             }
             c[i] = (v as Numeric).toFloat();
         }
-        if (c[0] < 0.0 || c[1] < 0.0 || c[5] < 0.0) {
+        if (c[0] < 0.0 || c[1] < 0.0 || c[5] < 0.0 || c[7] < 0.0) {
             return null;
+        }
+        if (size == CAL_LEGACY_SIZE) {
+            c[7] = (c[1] > 0.000001) ? (2.0 * c[2] * c[2]) / c[1] : 0.0;
         }
         return c;
     }
@@ -369,6 +390,7 @@ class SolarModel {
         c[2] = -(saving / 100.0) * BatteryModel.REG_MIN_VARIATION;
         c[3] = 0.0;
         c[4] = BatteryModel.REG_MIN_SPREAD;
+        c[7] = (2.0 * c[2] * c[2]) / c[1];
         return c;
     }
 
@@ -383,7 +405,7 @@ class SolarModel {
     }
 
     function pooledSavingPerHour() as Float? {
-        return _battery.pooledSavingPerHour(_calDof, _calCxx, _calCxy, _calMinX, _calMaxX);
+        return _battery.pooledSavingPerHour(_calDof, _calCxx, _calCxy, _calMinX, _calMaxX, _calCyy);
     }
 
     function effectiveDrain() as Float? {
@@ -436,6 +458,7 @@ class SolarModel {
     function batteryUsedPercent() as Float { return _battery.usedPercent(); }
     function batteryConfidence() as Number { return _battery.confidence(); }
     function batteryEdges() as Number { return _battery.edges(); }
+    function batteryRegressionSamples() as Number { return _battery.regressionSamples(); }
 
     // Signed: positive is draining, negative is gaining charge in the sun.
     function netFlowPerHour() as Float? { return _battery.netFlowPerHour(); }
