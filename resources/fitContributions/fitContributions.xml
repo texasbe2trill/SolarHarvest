@@ -15,7 +15,10 @@
         Every id below must match a static const ID_* in FitRecorder.mc exactly.
         They are listed in that same order so the two files can be read side by
         side; a field added to one without the other is a field that records but
-        never appears on Connect.
+        never appears on Connect. sortOrder is Connect's order, not the id's:
+        the sun's curves first (intensity, the harvest so far, sun caught, the
+        sun's height), then the battery's, then the summary figures with the
+        sun's before the battery's, then the laps.
     -->
 
     <!-- id 0: solar_intensity, RECORD - the live intensity curve. -->
@@ -30,7 +33,7 @@
 
     <!-- id 1: full_sun, SESSION - minutes at full sun for the whole activity. -->
     <fitField id="1"
-              sortOrder="1"
+              sortOrder="10"
               precision="0"
               displayInActivitySummary="true"
               dataLabel="@Strings.FitFullSun"
@@ -38,7 +41,7 @@
 
     <!-- id 2: lap_full_sun, LAP - the same figure, per lap. -->
     <fitField id="2"
-              sortOrder="2"
+              sortOrder="30"
               precision="0"
               displayInActivityLaps="true"
               dataLabel="@Strings.FitLapFullSun"
@@ -46,7 +49,7 @@
 
     <!-- id 3: battery, RECORD - the battery-level curve. -->
     <fitField id="3"
-              sortOrder="3"
+              sortOrder="5"
               precision="0"
               displayInChart="true"
               chartTitle="@Strings.FitBattery"
@@ -56,7 +59,7 @@
 
     <!-- id 4: avg_solar, SESSION. -->
     <fitField id="4"
-              sortOrder="4"
+              sortOrder="12"
               precision="0"
               displayInActivitySummary="true"
               dataLabel="@Strings.FitAvgSolar"
@@ -64,7 +67,7 @@
 
     <!-- id 5: peak_solar, SESSION. -->
     <fitField id="5"
-              sortOrder="5"
+              sortOrder="13"
               precision="0"
               displayInActivitySummary="true"
               dataLabel="@Strings.FitPeakSolar"
@@ -73,7 +76,7 @@
     <!-- id 6: time_in_sun, SESSION - share of the activity above the useful
          elevation threshold. -->
     <fitField id="6"
-              sortOrder="6"
+              sortOrder="11"
               precision="0"
               displayInActivitySummary="true"
               dataLabel="@Strings.FitTimeInSun"
@@ -82,7 +85,7 @@
     <!-- id 7: battery_used, SESSION - float, one decimal reads better than a
          rounded whole point on a value this small. -->
     <fitField id="7"
-              sortOrder="7"
+              sortOrder="15"
               precision="1"
               displayInActivitySummary="true"
               dataLabel="@Strings.FitBatteryUsed"
@@ -92,7 +95,7 @@
          watch's own page when nothing has moved yet; absent from the FIT
          entirely in that case, same as any other unset field. -->
     <fitField id="8"
-              sortOrder="8"
+              sortOrder="16"
               precision="1"
               displayInActivitySummary="true"
               dataLabel="@Strings.FitBatteryRate"
@@ -100,7 +103,7 @@
 
     <!-- id 9: solar_saving, SESSION - the fitted offset the sun bought. -->
     <fitField id="9"
-              sortOrder="9"
+              sortOrder="18"
               precision="1"
               displayInActivitySummary="true"
               dataLabel="@Strings.FitSolarSaving"
@@ -108,7 +111,7 @@
 
     <!-- id 10: lap_avg_solar, LAP. -->
     <fitField id="10"
-              sortOrder="10"
+              sortOrder="32"
               precision="0"
               displayInActivityLaps="true"
               dataLabel="@Strings.FitLapAvgSolar"
@@ -122,7 +125,7 @@
          there is a fix and the sun clears 15 degrees, independent of whether
          the battery moved a single point. -->
     <fitField id="11"
-              sortOrder="11"
+              sortOrder="2"
               precision="0"
               displayInChart="true"
               chartTitle="@Strings.FitCatching"
@@ -135,7 +138,7 @@
          Connect a real curve to draw even on the rare activity where solar
          intensity itself barely moves. -->
     <fitField id="12"
-              sortOrder="12"
+              sortOrder="3"
               precision="0"
               displayInChart="true"
               chartTitle="@Strings.FitSunElevation"
@@ -146,15 +149,16 @@
     <!-- id 13: projected_hours, SESSION - runtime left at the measured rate,
          restated as a summary stat so it survives past the activity screen. -->
     <fitField id="13"
-              sortOrder="13"
+              sortOrder="17"
               precision="1"
               displayInActivitySummary="true"
               dataLabel="@Strings.FitProjectedHours"
               unitLabel="@Strings.UnitHours" />
 
-    <!-- id 14: battery_days, RECORD - EXPERIMENT: the watch's days remaining, unrounded. -->
+    <!-- id 14: battery_days, RECORD - the watch's days remaining, unrounded,
+         every second: the gauge behind ids 15 to 18. -->
     <fitField id="14"
-              sortOrder="14"
+              sortOrder="4"
               precision="2"
               displayInChart="true"
               chartTitle="@Strings.FitBatteryDays"
@@ -162,13 +166,40 @@
               unitLabel="@Strings.UnitDays"
               fillColor="#55AAFF" />
 
-    <!-- id 15: battery_raw, RECORD - EXPERIMENT: the level as a float, unrounded. -->
+    <!-- id 15: life_spent, SESSION - battery life the activity spent, in
+         minutes, by the days gauge: finer than battery_used's whole percent. -->
     <fitField id="15"
-              sortOrder="15"
-              precision="2"
+              sortOrder="14"
+              precision="0"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitLifeSpent"
+              unitLabel="@Strings.UnitMinutes" />
+
+    <!-- id 16: lap_life_spent, LAP - the same, per lap. -->
+    <fitField id="16"
+              sortOrder="31"
+              precision="0"
+              displayInActivityLaps="true"
+              dataLabel="@Strings.FitLapLifeSpent"
+              unitLabel="@Strings.UnitMinutes" />
+
+    <!-- id 17: full_sun_so_far, RECORD - the harvest as it grows, a curve that
+         only rises: steep in the open, flat in shade. -->
+    <fitField id="17"
+              sortOrder="1"
+              precision="1"
               displayInChart="true"
-              chartTitle="@Strings.FitBatteryRaw"
-              dataLabel="@Strings.FitBatteryRaw"
-              unitLabel="@Strings.UnitPercent"
-              fillColor="#00AA55" />
+              chartTitle="@Strings.FitFullSunSoFar"
+              dataLabel="@Strings.FitFullSunSoFar"
+              unitLabel="@Strings.UnitMinutes"
+              fillColor="#FF7700" />
+
+    <!-- id 18: sun_saving_fine, SESSION - minutes of battery life an hour of
+         full sun saves, by the days gauge, once the fit has the evidence. -->
+    <fitField id="18"
+              sortOrder="19"
+              precision="1"
+              displayInActivitySummary="true"
+              dataLabel="@Strings.FitFineSaving"
+              unitLabel="@Strings.UnitMinutesPerHour" />
 </fitContributions>

@@ -2593,3 +2593,163 @@ function testChargingHasNoCeiling(logger as Logger) as Boolean {
         "a charging watch holding its level bounds nothing");
     return true;
 }
+
+// -- the days gauge -----------------------------------------------------
+
+// Life spent is the first reading less the latest, in minutes; a lap's from
+// the lap's first reading; nothing on a watch that reports no gauge.
+(:test)
+function testTheDaysGaugeMeasuresLifeSpent(logger as Logger) as Boolean {
+    var model = new SolarModel(1);
+    var days = 2.5;
+    for (var t = 0; t < 600; t++) {
+        model.addSampleWhen(50, 80.0, false, true);
+        days -= 1.0 / 86400.0;                 // a day of life a day
+        model.addDays(days, 50);
+    }
+    var spent = model.lifeSpentMinutes();
+    Test.assertMessage(spent != null && (spent - 10.0).abs() < 0.2,
+        "ten minutes recording spent ten minutes of life, got " + ((spent == null) ? "none" : spent.format("%.2f")));
+    model.noteLap();
+    for (var t = 0; t < 300; t++) {
+        model.addSampleWhen(50, 80.0, false, true);
+        days -= 1.0 / 86400.0;
+        model.addDays(days, 50);
+    }
+    var lap = model.lapLifeSpentMinutes();
+    spent = model.lifeSpentMinutes();
+    Test.assertMessage(lap != null && (lap - 5.0).abs() < 0.2, "the lap spent five, got " + ((lap == null) ? "none" : lap.format("%.2f")));
+    Test.assertMessage(spent != null && (spent - 15.0).abs() < 0.2, "and the activity fifteen");
+    var none = new SolarModel(1);
+    none.addSampleWhen(50, 80.0, false, true);
+    none.addDays(-1.0, 50);
+    Test.assertMessage(none.lifeSpentMinutes() == null, "no gauge, no figure");
+    // Paused, the gauge is read but nothing is measured against it.
+    var paused = new SolarModel(1);
+    for (var t = 0; t < 400; t++) {
+        paused.addSampleWhen(50, 80.0, false, false);
+        paused.addDays(2.0 - (t / 86400.0), 50);
+    }
+    Test.assertMessage(paused.lifeSpentMinutes() == null, "nothing spent before the timer runs");
+    return true;
+}
+
+// Sun and shade by turns: the gauge falls slower in the sun, and the fit
+// reads the difference in minutes of life an hour of full sun saves, then as
+// percent an hour on the watch's own terms, and it stands in for the bonus
+// where the percent steps have nothing. A gauge that ignores the light, a
+// countdown, never passes the gates.
+(:test)
+function testTheDaysGaugeFitFollowsTheLightAndNotACountdown(logger as Logger) as Boolean {
+    var model = new SolarModel(1);
+    var days = 3.0;
+    for (var w = 0; w < 12; w++) {
+        var light = (w % 2 == 0) ? 90 : 10;
+        var rate = 60.0 - ((18.0 * light) / 100.0);   // minutes of life an hour
+        for (var t = 0; t < 300; t++) {
+            model.addSampleWhen(light, 80.0, false, true);
+            days -= (rate / 3600.0) / 1440.0;
+            model.addDays(days, light);
+        }
+    }
+    var fine = model.fineSavingPerHour();
+    logger.debug("fine saving " + ((fine == null) ? "none" : fine.format("%.2f")) + " min/h from " + model.activityFineCalibration()[0].format("%.0f") + " dof");
+    Test.assertMessage(fine != null && (fine - 18.0).abs() < 1.5, "full sun saves eighteen minutes an hour, got " + ((fine == null) ? "none" : fine.format("%.2f")));
+    var pct = model.fineSavingPercentPerHour();
+    Test.assertMessage(pct != null && (pct - 0.333).abs() < 0.05, "a third of a percent an hour at 80% with three days left, got " + ((pct == null) ? "none" : pct.format("%.3f")));
+    var effective = model.effectiveSaving();
+    Test.assertMessage(effective != null && (effective - pct).abs() < 0.001, "and the bonus rests on it while the percent steps have nothing");
+    Test.assertMessage(model.solarBonusMinutes() == null || model.bonusIsLearned(), "as a learned figure");
+    var countdown = new SolarModel(1);
+    days = 3.0;
+    for (var w = 0; w < 12; w++) {
+        var light = (w % 2 == 0) ? 90 : 10;
+        for (var t = 0; t < 300; t++) {
+            countdown.addSampleWhen(light, 80.0, false, true);
+            days -= (60.0 / 3600.0) / 1440.0;
+            countdown.addDays(days, light);
+        }
+    }
+    Test.assertMessage(countdown.fineSavingPerHour() == null, "a countdown claims nothing");
+    Test.assertMessage(countdown.effectiveSaving() == null, "and buys no bonus");
+    return true;
+}
+
+// The gauge's fit carries across activities beside the calibration: two
+// windows alone say nothing, with the carried fit they do; the stored record
+// reads back, and one from before the gauge reads as no fit.
+(:test)
+function testTheDaysGaugeFitCarriesAcrossActivities(logger as Logger) as Boolean {
+    var first = new SolarModel(1);
+    var days = 3.0;
+    for (var w = 0; w < 12; w++) {
+        var light = (w % 2 == 0) ? 90 : 10;
+        var rate = 60.0 - ((18.0 * light) / 100.0);
+        for (var t = 0; t < 300; t++) {
+            first.addSampleWhen(light, 80.0, false, true);
+            days -= (rate / 3600.0) / 1440.0;
+            first.addDays(days, light);
+        }
+    }
+    var carried = SolarModel.mergeFine(SolarModel.emptyFine(), first.activityFineCalibration());
+    // Twelve turns of the light make eleven windows (the first reading opens the first), ten degrees of freedom.
+    Test.assertMessage(carried[0] == 10.0 && carried[3] < 15.0 && carried[4] > 85.0, "ten degrees of freedom over the light's range, got " + carried[0].format("%.0f"));
+    var stored = [1, 0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0, 0.0, 0.0,
+                  carried[0], carried[1], carried[2], carried[3], carried[4], carried[5]] as Array<Numeric>;
+    var back = SolarModel.fineFrom(stored, 1 + SolarModel.CAL_SIZE);
+    Test.assertMessage(back != null && back[0] == carried[0] && (back[2] - carried[2]).abs() < 0.001, "the stored fit reads back");
+    Test.assertMessage(SolarModel.fineFrom([1, 0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0, 0.0, 0.0] as Array<Numeric>, 9) == null, "and a record from before the gauge holds none");
+    Test.assertMessage(SolarModel.fineFrom([1, 0.0, "x", 0.0, 1000.0, -1000.0, 0.0, 0.0, 0.0, 1.0, 1.0, "x", 0.0, 1.0, 0.0] as Array, 9) == null, "nor one that is not numbers");
+    var second = new SolarModel(1);
+    days = 2.0;
+    for (var w = 0; w < 3; w++) {
+        var light = (w % 2 == 0) ? 90 : 10;
+        var rate = 60.0 - ((18.0 * light) / 100.0);
+        for (var t = 0; t < 300; t++) {
+            second.addSampleWhen(light, 60.0, false, true);
+            days -= (rate / 3600.0) / 1440.0;
+            second.addDays(days, light);
+        }
+    }
+    Test.assertMessage(second.fineSavingPerHour() == null, "two windows alone say nothing");
+    second.setFineCalibration(carried);
+    var pooled = second.fineSavingPerHour();
+    Test.assertMessage(pooled != null && (pooled - 18.0).abs() < 1.5, "with the carried fit they do, got " + ((pooled == null) ? "none" : pooled.format("%.2f")));
+    // Past the cap the older evidence gives way, never the new.
+    var heavy = carried;
+    for (var i = 0; i < 20; i++) {
+        heavy = SolarModel.mergeFine(heavy, first.activityFineCalibration());
+    }
+    Test.assertMessage(heavy[0] <= SolarModel.CAL_MAX_DOF + 0.01, "the carried fit is capped, got " + heavy[0].format("%.0f"));
+    return true;
+}
+
+// The gauge gives the battery page a drain figure from the tenth active
+// minute: the life spent over the time it took, as percent an hour on the
+// watch's own terms, and nothing before that or without a gauge.
+(:test)
+function testTheDaysGaugeGivesADrainRateEarly(logger as Logger) as Boolean {
+    var model = new SolarModel(1);
+    var days = 2.0;
+    for (var t = 0; t < 540; t++) {
+        model.addSampleWhen(40, 50.0, false, true);
+        days -= 1.5 / 86400.0;              // a day and a half of life a day
+        model.addDays(days, 40);
+    }
+    Test.assertMessage(model.gaugeDrainPerHour() == null, "nothing before ten active minutes");
+    for (var t = 0; t < 120; t++) {
+        model.addSampleWhen(40, 50.0, false, true);
+        days -= 1.5 / 86400.0;
+        model.addDays(days, 40);
+    }
+    var drain = model.gaugeDrainPerHour();
+    // 1.5 days of life a day at 50% with 2 days left: 1.5 * 50 / 2 / 24 = 1.5625 percent an hour.
+    Test.assertMessage(drain != null && (drain - 1.5625).abs() < 0.05, "a day and a half a day reads 1.56 percent an hour, got " + ((drain == null) ? "none" : drain.format("%.3f")));
+    var none = new SolarModel(1);
+    for (var t = 0; t < 700; t++) {
+        none.addSampleWhen(40, 50.0, false, true);
+        none.addDays(-1.0, 40);
+    }
+    Test.assertMessage(none.gaugeDrainPerHour() == null, "and none without a gauge");
+    return true;
+}

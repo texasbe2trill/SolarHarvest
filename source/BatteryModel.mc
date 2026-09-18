@@ -62,6 +62,18 @@ class BatteryModel {
     static const CONF_MEASURED = 2;
     static const CONF_CONFIDENT = 3;
 
+    // The days gauge. The watch's own days remaining figure moves about once
+    // a minute on a fenix 9 Pro Solar, by about a minute of battery life,
+    // thirty times finer than the whole percent (recorded on the dev branch,
+    // see docs/experiments/battery-gauge.md). Whether it is a reading of the
+    // charge or a countdown from a modelled rate is not yet known, so it is
+    // fitted the same way the percent steps are, in windows of active time
+    // against the light in them, and quoted only past the same evidence
+    // gates: a countdown does not follow the light and never passes them.
+    static const FINE_WINDOW = 300;              // seconds of active time in one window
+    static const FINE_MIN_SAVING = 0.5;          // minutes of life an hour, below which nothing is claimed
+    static const MINUTES_PER_DAY = 1440.0;
+
     private var _level as Float = -1.0;
     private var _start as Float = -1.0;
     private var _prev as Float = -1.0;
@@ -102,6 +114,25 @@ class BatteryModel {
     private var _solSum as Float = 0.0;
     private var _solTicks as Number = 0;
 
+    // The days gauge: the first and latest readings while recording, the lap's
+    // first, the window in progress, and the same running fit for it.
+    private var _recording as Boolean = false;
+    private var _daysFirst as Float = -1.0;
+    private var _daysLast as Float = -1.0;
+    private var _lapDaysFirst as Float = -1.0;
+    private var _wStartT as Number = -1;
+    private var _wStartDays as Float = 0.0;
+    private var _wSolSum as Float = 0.0;
+    private var _wSolTicks as Number = 0;
+    private var _fn as Number = 0;
+    private var _fMeanX as Float = 0.0;
+    private var _fMeanY as Float = 0.0;
+    private var _fCxx as Float = 0.0;
+    private var _fCxy as Float = 0.0;
+    private var _fCyy as Float = 0.0;
+    private var _fMinX as Float = 0.0;
+    private var _fMaxX as Float = 0.0;
+
     function initialize() {
         reset();
     }
@@ -135,6 +166,22 @@ class BatteryModel {
         _maxX = 0.0;
         _solSum = 0.0;
         _solTicks = 0;
+        _recording = false;
+        _daysFirst = -1.0;
+        _daysLast = -1.0;
+        _lapDaysFirst = -1.0;
+        _wStartT = -1;
+        _wStartDays = 0.0;
+        _wSolSum = 0.0;
+        _wSolTicks = 0;
+        _fn = 0;
+        _fMeanX = 0.0;
+        _fMeanY = 0.0;
+        _fCxx = 0.0;
+        _fCxy = 0.0;
+        _fCyy = 0.0;
+        _fMinX = 0.0;
+        _fMaxX = 0.0;
     }
 
     // One reading per second. Pass battery < 0 when the level is unknown.
@@ -151,6 +198,7 @@ class BatteryModel {
     // are not seconds this activity spent in the sun.
     function addSampleWhen(intensity as Number, battery as Float, charging as Boolean,
                            recording as Boolean) as Void {
+        _recording = recording;
         if (battery < 0.0) {
             return;
         }
@@ -249,6 +297,188 @@ class BatteryModel {
         _prevEdgeLevel = level;
         _solSum = 0.0;
         _solTicks = 0;
+    }
+
+    // The days gauge, once a second after addSampleWhen(): the watch's days
+    // remaining, or below zero on a watch that reports none. Life spent is the
+    // first reading less the latest, in minutes. The fit takes windows of
+    // FINE_WINDOW active seconds: the life spent in the window an hour against
+    // the light in it. A pause or charging ends the window in progress without
+    // counting it, since the gauge keeps moving while the activity does not.
+    function addDays(days as Float, intensity as Number) as Void {
+        if (days < 0.0 || !_recording || _charging) {
+            _wStartT = -1;
+            if (days >= 0.0 && _recording) {
+                _daysLast = days;
+            }
+            return;
+        }
+        if (_daysFirst < 0.0) {
+            _daysFirst = days;
+            _lapDaysFirst = days;
+        }
+        _daysLast = days;
+        if (_wStartT < 0) {
+            _wStartT = _activeSeconds;
+            _wStartDays = days;
+            _wSolSum = 0.0;
+            _wSolTicks = 0;
+            return;
+        }
+        _wSolSum += intensity;
+        _wSolTicks += 1;
+        var span = _activeSeconds - _wStartT;
+        if (span < FINE_WINDOW || _wSolTicks == 0) {
+            return;
+        }
+        var x = _wSolSum / _wSolTicks;
+        var y = ((_wStartDays - days) * MINUTES_PER_DAY * 3600.0) / span;
+        if (_fn == 0) {
+            _fMinX = x;
+            _fMaxX = x;
+        } else if (x < _fMinX) {
+            _fMinX = x;
+        } else if (x > _fMaxX) {
+            _fMaxX = x;
+        }
+        _fn += 1;
+        var dx = x - _fMeanX;
+        var dy = y - _fMeanY;
+        _fMeanX += dx / _fn;
+        _fMeanY += dy / _fn;
+        _fCxx += dx * (x - _fMeanX);
+        _fCxy += dx * (y - _fMeanY);
+        _fCyy += dy * (y - _fMeanY);
+        _wStartT = _activeSeconds;
+        _wStartDays = days;
+        _wSolSum = 0.0;
+        _wSolTicks = 0;
+    }
+
+    function noteLapDays() as Void {
+        _lapDaysFirst = _daysLast;
+    }
+
+    function daysLeft() as Float { return _daysLast; }
+    function fineWindows() as Number { return _fn; }
+
+    // Battery life this activity has spent, in minutes, by the days gauge.
+    function lifeSpentMinutes() as Float? {
+        if (_daysFirst < 0.0 || _daysLast < 0.0) {
+            return null;
+        }
+        return (_daysFirst - _daysLast) * MINUTES_PER_DAY;
+    }
+
+    function lapLifeSpentMinutes() as Float? {
+        if (_lapDaysFirst < 0.0 || _daysLast < 0.0) {
+            return null;
+        }
+        return (_lapDaysFirst - _daysLast) * MINUTES_PER_DAY;
+    }
+
+    // Minutes of battery life an hour of full sun saves, by the days gauge,
+    // fitted on this activity's windows together with the prior's. The same
+    // rules and the same shape as pooledSavingPerHour(), written out again
+    // for the same reason: a leaf under onUpdate, where the stack is shallow.
+    function fineSavingPerHour(priorDof as Float, priorCxx as Float, priorCxy as Float,
+                               priorMinX as Float, priorMaxX as Float, priorCyy as Float) as Float? {
+        var dof = priorDof;
+        var cxx = priorCxx;
+        var cxy = priorCxy;
+        var cyy = priorCyy;
+        var spread = priorMaxX - priorMinX;
+        if (_fn >= 2) {
+            dof += _fn - 1;
+            cxx += _fCxx;
+            cxy += _fCxy;
+            cyy += _fCyy;
+            spread = ((_fMaxX > priorMaxX) ? _fMaxX : priorMaxX) - ((_fMinX < priorMinX) ? _fMinX : priorMinX);
+        }
+        if (cxx < 0.000001) {
+            return null;
+        }
+        if (!(dof >= (REG_MIN_INTERVALS - 1) && spread >= REG_MIN_SPREAD && cxx >= REG_MIN_VARIATION)) {
+            if (dof < (REG_EARLY_INTERVALS - 1) || spread < REG_EARLY_SPREAD || cyy < 0.0) {
+                return null;
+            }
+            cyy -= (cxy * cxy) / cxx;
+            if (cyy < 0.0) {
+                cyy = 0.0;
+            }
+            if ((cxy * cxy) * (dof - 1.0) < (REG_T * REG_T) * cyy * cxx) {
+                return null;
+            }
+        }
+        cxy = -(cxy / cxx) * 100.0;
+        return (cxy > FINE_MIN_SAVING) ? cxy : null;
+    }
+
+    // The same, as percent an hour on the watch's own terms: a day of life is
+    // the level over the days left. The fit is written out a third time
+    // rather than taken from fineSavingPerHour(): this is the leaf the bonus
+    // reaches under onUpdate, where the stack has no room for one frame more.
+    function finePercentPerHour(priorDof as Float, priorCxx as Float, priorCxy as Float,
+                                priorMinX as Float, priorMaxX as Float, priorCyy as Float) as Float? {
+        var dof = priorDof;
+        var cxx = priorCxx;
+        var cxy = priorCxy;
+        var cyy = priorCyy;
+        var spread = priorMaxX - priorMinX;
+        if (_fn >= 2) {
+            dof += _fn - 1;
+            cxx += _fCxx;
+            cxy += _fCxy;
+            cyy += _fCyy;
+            spread = ((_fMaxX > priorMaxX) ? _fMaxX : priorMaxX) - ((_fMinX < priorMinX) ? _fMinX : priorMinX);
+        }
+        if (cxx < 0.000001 || _level <= 0.0 || _daysLast <= 0.0) {
+            return null;
+        }
+        if (!(dof >= (REG_MIN_INTERVALS - 1) && spread >= REG_MIN_SPREAD && cxx >= REG_MIN_VARIATION)) {
+            if (dof < (REG_EARLY_INTERVALS - 1) || spread < REG_EARLY_SPREAD || cyy < 0.0) {
+                return null;
+            }
+            cyy -= (cxy * cxy) / cxx;
+            if (cyy < 0.0) {
+                cyy = 0.0;
+            }
+            if ((cxy * cxy) * (dof - 1.0) < (REG_T * REG_T) * cyy * cxx) {
+                return null;
+            }
+        }
+        cxy = -(cxy / cxx) * 100.0;
+        if (cxy <= FINE_MIN_SAVING) {
+            return null;
+        }
+        return (cxy * _level) / (_daysLast * MINUTES_PER_DAY);
+    }
+
+    // Drain by the days gauge, as percent an hour on the watch's own terms,
+    // after MIN_SECONDS of active time: the life the activity has spent over
+    // the time it took. A figure on every activity from its tenth minute,
+    // where the percent steps need two steps and often never give one.
+    function gaugeDrainPerHour() as Float? {
+        if (_daysFirst < 0.0 || _daysLast <= 0.0 || _level <= 0.0 || _activeSeconds < MIN_SECONDS) {
+            return null;
+        }
+        var drain = (((_daysFirst - _daysLast) * _level) / _daysLast) * (3600.0 / _activeSeconds);
+        return (drain > 0.0) ? drain : null;
+    }
+
+    // What this activity's windows add to the carried fine fit, as
+    // [dof, cxx, cxy, minLight, maxLight, cyy].
+    function fineContribution() as Array<Float> {
+        var c = [0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0] as Array<Float>;
+        if (_fn >= 2) {
+            c[0] = (_fn - 1).toFloat();
+            c[1] = _fCxx;
+            c[2] = _fCxy;
+            c[3] = _fMinX;
+            c[4] = _fMaxX;
+            c[5] = _fCyy;
+        }
+        return c;
     }
 
     // -- readings ---------------------------------------------------------

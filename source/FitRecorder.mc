@@ -48,13 +48,19 @@ class FitRecorder {
     static const ID_CATCHING = 11;
     static const ID_ELEVATION = 12;
     static const ID_PROJECTED_HOURS = 13;
-    // EXPERIMENT (dev branch). The watch reports its level in whole percents,
-    // too coarse to measure what the sun saves on a short activity. These two
-    // put the gauge's raw values in the record, as floats and every second, to
-    // answer one question from one walk: does the days remaining figure, or
-    // the level itself, move between the whole percent steps?
+    // The days gauge (dev branch). The watch reports its level in whole
+    // percents, too coarse to measure what the sun saves on a short activity;
+    // its days remaining figure moves about once a minute. Recorded every
+    // second, unrounded, and read three ways: the battery life the activity
+    // and each lap spent, in minutes, and the minutes of life an hour of full
+    // sun saves, once the fit has the evidence. battery_raw (id 15 before)
+    // answered its question on the first walk, whole percents only, and
+    // retired; its id is reused, since no store build ever wrote it.
     static const ID_BATTERY_DAYS = 14;
-    static const ID_BATTERY_RAW = 15;
+    static const ID_LIFE_SPENT = 15;
+    static const ID_LAP_LIFE_SPENT = 16;
+    static const ID_FULL_SUN_SO_FAR = 17;
+    static const ID_FINE_SAVING = 18;
 
     // Record stream: the curves worth plotting against distance and time.
     private var _solar as Field?;
@@ -62,7 +68,7 @@ class FitRecorder {
     private var _catching as Field?;
     private var _elevation as Field?;
     private var _days as Field?;
-    private var _raw as Field?;
+    private var _soFar as Field?;
 
     // Session summary.
     private var _fullSun as Field?;
@@ -73,10 +79,13 @@ class FitRecorder {
     private var _flow as Field?;
     private var _saving as Field?;
     private var _projectedHours as Field?;
+    private var _life as Field?;
+    private var _fine as Field?;
 
     // Lap summary.
     private var _lapFullSun as Field?;
     private var _lapAvg as Field?;
+    private var _lapLife as Field?;
 
     function initialize(field as WatchUi.DataField) {
         _solar = make(field, "solar_intensity", ID_SOLAR, FitContributor.DATA_TYPE_UINT8,
@@ -100,8 +109,10 @@ class FitRecorder {
 
         _days = make(field, "battery_days", ID_BATTERY_DAYS, FitContributor.DATA_TYPE_FLOAT,
             FitContributor.MESG_TYPE_RECORD, "d");
-        _raw = make(field, "battery_raw", ID_BATTERY_RAW, FitContributor.DATA_TYPE_FLOAT,
-            FitContributor.MESG_TYPE_RECORD, "%");
+        // The harvest as it grows: full sun minutes so far, to the tenth, a
+        // curve that only ever rises, steeply in the open and flat in shade.
+        _soFar = make(field, "full_sun_so_far", ID_FULL_SUN_SO_FAR, FitContributor.DATA_TYPE_FLOAT,
+            FitContributor.MESG_TYPE_RECORD, "min");
 
         _fullSun = make(field, "full_sun", ID_SESSION_FULL_SUN, FitContributor.DATA_TYPE_UINT16,
             FitContributor.MESG_TYPE_SESSION, "min");
@@ -123,11 +134,17 @@ class FitRecorder {
         // is looking at after the fact.
         _projectedHours = make(field, "projected_hours", ID_PROJECTED_HOURS,
             FitContributor.DATA_TYPE_FLOAT, FitContributor.MESG_TYPE_SESSION, "h");
+        _life = make(field, "life_spent", ID_LIFE_SPENT, FitContributor.DATA_TYPE_FLOAT,
+            FitContributor.MESG_TYPE_SESSION, "min");
+        _fine = make(field, "sun_saving_fine", ID_FINE_SAVING, FitContributor.DATA_TYPE_FLOAT,
+            FitContributor.MESG_TYPE_SESSION, "min/h");
 
         _lapFullSun = make(field, "lap_full_sun", ID_LAP_FULL_SUN, FitContributor.DATA_TYPE_UINT16,
             FitContributor.MESG_TYPE_LAP, "min");
         _lapAvg = make(field, "lap_avg_solar", ID_LAP_AVG, FitContributor.DATA_TYPE_UINT8,
             FitContributor.MESG_TYPE_LAP, "%");
+        _lapLife = make(field, "lap_life_spent", ID_LAP_LIFE_SPENT, FitContributor.DATA_TYPE_FLOAT,
+            FitContributor.MESG_TYPE_LAP, "min");
     }
 
     private function make(field as WatchUi.DataField, name as String, id as Number,
@@ -155,6 +172,7 @@ class FitRecorder {
         }
 
         set(_fullSun, model.harvestSeconds() / 60);
+        set(_soFar, model.harvestSeconds() / 60.0);
         set(_avg, model.average());
         set(_peak, model.peak());
         set(_sunPct, percent(model.sunFraction()));
@@ -174,6 +192,14 @@ class FitRecorder {
         if (hours != null) {
             set(_projectedHours, hours);
         }
+        var life = model.lifeSpentMinutes();
+        if (life != null) {
+            set(_life, life);
+        }
+        var fine = model.fineSavingPerHour();
+        if (fine != null) {
+            set(_fine, fine);
+        }
 
         if (hasFix) {
             set(_elevation, roundedElevation(elevation));
@@ -186,12 +212,9 @@ class FitRecorder {
         updateLap(model);
     }
 
-    // The gauge as the watch gives it, unrounded. days is negative on a watch
-    // that reports none, and is then left out of the record.
-    function updateGauge(battery as Float, days as Float) as Void {
-        if (battery >= 0.0) {
-            set(_raw, battery);
-        }
+    // The gauge as the watch gives it, unrounded. Negative on a watch that
+    // reports none, and then left out of the record.
+    function updateGauge(days as Float) as Void {
         if (days >= 0.0) {
             set(_days, days);
         }
@@ -204,6 +227,10 @@ class FitRecorder {
     function updateLap(model as SolarModel) as Void {
         set(_lapFullSun, model.lapHarvestSeconds() / 60);
         set(_lapAvg, model.lapAverage());
+        var life = model.lapLifeSpentMinutes();
+        if (life != null) {
+            set(_lapLife, life);
+        }
     }
 
     private function set(field as Field?, value as Numeric) as Void {

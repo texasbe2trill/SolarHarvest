@@ -341,6 +341,7 @@ class SolarPowerView extends WatchUi.DataField {
         _daysLeft = readDaysLeft(stats);
         _recording = isRecording(info);
         _model.addSampleWhen(intensity, stats.battery, _charging, _recording);
+        _model.addDays(_daysLeft, intensity);
         if (_activityTag < 0 && (info has :startTime) && info.startTime != null) {
             _activityTag = (info.startTime as Time.Moment).value();
             absorbStalePending();
@@ -349,7 +350,7 @@ class SolarPowerView extends WatchUi.DataField {
         var fit = _fit;
         if (fit != null) {
             fit.update(_model, _elevation, _hasFix);
-            fit.updateGauge(stats.battery, _daysLeft);
+            fit.updateGauge(_daysLeft);
         }
         updateSunTimes(info);
         readHeading(info);
@@ -1167,6 +1168,14 @@ class SolarPowerView extends WatchUi.DataField {
         var ceiling = _model.drainCeilingPerHour();
         if (ceiling != null) {
             return "<" + ceiling.format("%.1f") + "%/h";
+        }
+        // Then the days gauge's own reading of this activity, from its tenth
+        // minute, marked as an estimate the way the learned bonus is: it is
+        // the watch's gauge, not a counted percent step. (The same local
+        // again: this runs under onUpdate, where a fatter frame overflows.)
+        ceiling = _model.gaugeDrainPerHour();
+        if (ceiling != null) {
+            return "~" + ceiling.format("%.1f") + "%/h";
         }
         // Garmin's own batteryInDays is a smartwatch-mode figure, several times
         // lower than the drain of a GPS activity. Quoting it here as though it
@@ -2254,6 +2263,10 @@ class SolarPowerView extends WatchUi.DataField {
                 if (c != null) {
                     _model.setCalibration(c);
                 }
+                var f = SolarModel.fineFrom(stored, 1 + SolarModel.CAL_SIZE);
+                if (f != null) {
+                    _model.setFineCalibration(f);
+                }
             }
             migrateLegacy(stored == null);
         } catch (ex) {
@@ -2274,7 +2287,7 @@ class SolarPowerView extends WatchUi.DataField {
             && (saving instanceof Lang.Float || saving instanceof Lang.Number || saving instanceof Lang.Double)) {
             var seed = SolarModel.calibrationFromLegacy((saving as Numeric).toFloat());
             if (seed != null) {
-                storeCalibration(seed);
+                storeCalibration(seed, SolarModel.emptyFine());
             }
         }
         Application.Storage.deleteValue(LEGACY_SAVING_KEY);
@@ -2291,16 +2304,19 @@ class SolarPowerView extends WatchUi.DataField {
                 return;
             }
             var add = null;
+            var addFine = null;
             if (pending.size() > 1 && pending[0] == CAL_VERSION
                 && (pending[1] instanceof Lang.Number || pending[1] instanceof Lang.Long)) {
                 if ((pending[1] as Numeric).toNumber() == _activityTag) {
                     return;
                 }
                 add = SolarModel.calibrationFrom(pending, 2);
+                addFine = SolarModel.fineFrom(pending, 2 + SolarModel.CAL_SIZE);
             }
             Application.Storage.deleteValue(CAL_PENDING_KEY);
             if (add != null) {
-                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), add));
+                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), add),
+                    (addFine != null) ? SolarModel.mergeFine(_model.fineCalibration(), addFine) : _model.fineCalibration());
             }
         } catch (ex) {
             // Left for the next activity to try again.
@@ -2314,13 +2330,16 @@ class SolarPowerView extends WatchUi.DataField {
             return;
         }
         var a = _model.activityCalibration();
-        if (a[0] <= 0.0 && a[5] <= 0.0) {
+        var f = _model.activityFineCalibration();
+        if (a[0] <= 0.0 && a[5] <= 0.0 && f[0] <= 0.0) {
             return;
         }
         try {
+            // The classic eight (the scatter included, so the read side takes
+            // it as it is and not as the legacy seven), then the gauge's six.
             Application.Storage.setValue(CAL_PENDING_KEY,
-                [CAL_VERSION, _activityTag, a[0], a[1], a[2], a[3], a[4], a[5], a[6]]
-                    as Array<Numeric>);
+                [CAL_VERSION, _activityTag, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7],
+                 f[0], f[1], f[2], f[3], f[4], f[5]] as Array<Numeric>);
         } catch (ex) {
             // Not being able to remember is not a reason to fail the activity.
         }
@@ -2331,9 +2350,11 @@ class SolarPowerView extends WatchUi.DataField {
         try {
             absorbStalePending();
             var a = _model.activityCalibration();
+            var f = _model.activityFineCalibration();
             Application.Storage.deleteValue(CAL_PENDING_KEY);
-            if (a[0] > 0.0 || a[5] > 0.0) {
-                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), a));
+            if (a[0] > 0.0 || a[5] > 0.0 || f[0] > 0.0) {
+                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), a),
+                    SolarModel.mergeFine(_model.fineCalibration(), f));
             }
         } catch (ex) {
             // The snapshot, if written, is folded in by the next activity.
@@ -2341,10 +2362,15 @@ class SolarPowerView extends WatchUi.DataField {
         _activityTag = -1;
     }
 
-    private function storeCalibration(c as Array<Float>) as Void {
+    // The calibration and the days gauge's fit together under one key: the
+    // classic eight after the version, then the gauge's six. A record from
+    // before the gauge is read as it was, with no fit carried.
+    private function storeCalibration(c as Array<Float>, f as Array<Float>) as Void {
         _model.setCalibration(c);
+        _model.setFineCalibration(f);
         Application.Storage.setValue(CAL_KEY,
-            [CAL_VERSION, c[0], c[1], c[2], c[3], c[4], c[5], c[6], SolarModel.cyyOf(c)] as Array<Numeric>);
+            [CAL_VERSION, c[0], c[1], c[2], c[3], c[4], c[5], c[6], SolarModel.cyyOf(c),
+             f[0], f[1], f[2], f[3], f[4], f[5]] as Array<Numeric>);
     }
 
     private function percentText(fraction as Float) as String {

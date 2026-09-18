@@ -25,6 +25,10 @@ that were not measured are listed separately, with the reason.
 
 Usage:  python3 tools/check_fit.py ACTIVITY.fit
 Needs:  pip install fitparse
+
+Given several FIT files it reports each and then pools the days gauge's fit
+across them the way the watch does, and says how many more such activities
+the watch's gate needs.
 """
 
 import re
@@ -59,6 +63,11 @@ FALLBACK_FIELDS = {  # name: (field id, message)
     "catching_percent": (11, "record"),
     "sun_elevation": (12, "record"),
     "projected_hours": (13, "session"),
+    "battery_days": (14, "record"),
+    "life_spent": (15, "session"),
+    "lap_life_spent": (16, "lap"),
+    "full_sun_so_far": (17, "record"),
+    "sun_saving_fine": (18, "session"),
 }
 FALLBACK_GATES = {  # source/BatteryModel.mc and source/SolarGeometry.mc
     "DEBOUNCE": 10,
@@ -73,7 +82,10 @@ FALLBACK_GATES = {  # source/BatteryModel.mc and source/SolarGeometry.mc
 ALWAYS_SESSION = ("full_sun", "avg_solar", "peak_solar", "time_in_sun", "battery_used")
 MEASURED_SESSION = ("battery_rate", "projected_hours", "solar_saving")
 LAP_FIELDS = ("lap_full_sun", "lap_avg_solar")
-EXPERIMENT_FIELDS = ("battery_days", "battery_raw")
+# The days gauge, on the dev branch only: the gauge itself, what it says the
+# activity and each lap spent, the harvest curve, and the fit on the gauge.
+EXPERIMENT_FIELDS = ("battery_days", "life_spent", "lap_life_spent", "full_sun_so_far", "sun_saving_fine")
+FINE_WINDOW = 300          # source/BatteryModel.mc FINE_WINDOW
 TIMER_STOPS = ("stop", "stop_all", "stop_disable", "stop_disable_all")
 
 # The watch fits solar saving against the raw sensor, but the file only holds
@@ -249,35 +261,123 @@ def expected_measurements(edges, active_total, g):
     return rate, runtime, best, len(intervals), spread
 
 
-def gauge_report(records):
-    """The dev branch's experiment: do the raw gauge values move between the
-    whole percent steps? Says nothing when the file holds neither field."""
-    series = {name: [(r.get("battery"), r[name]) for r in records if r.get(name) is not None]
-              for name in ("battery_raw", "battery_days")}
-    if not any(series.values()):
-        return
-    heading("EXPERIMENT: IS THERE A FINER BATTERY GAUGE?")
-    for name, pairs in series.items():
-        if not pairs:
-            print(f"  {name}: not recorded (this watch gives none)")
+def fine_windows(records, at):
+    """The days gauge fitted the way the watch fits it: windows of FINE_WINDOW
+    active seconds, each the minutes of life spent an hour against the mean
+    light, from the recorded battery_days and solar_intensity. Returns
+    [(mean light, minutes of life an hour)]. The watch's own windows also end
+    at pauses; here a window simply spans the active clock."""
+    rows = [(at(r["timestamp"]), r["solar_intensity"], r["battery_days"]) for r in records
+            if r.get("battery_days") is not None and r.get("solar_intensity") is not None]
+    windows = []
+    start = None
+    for t, light, days in rows:
+        if start is None:
+            start = (t, days)
+            lights = []
             continue
-        readings = [value for _, value in pairs]
-        changes = [abs(b - a) for a, b in zip(readings, readings[1:]) if b != a]
-        # Changes that happened while the whole percent level stood still are
-        # the ones that would make a finer gauge.
-        between = sum(1 for (la, a), (lb, b) in zip(pairs, pairs[1:]) if b != a and la == lb)
-        steps = sum(1 for (la, _), (lb, _) in zip(pairs, pairs[1:]) if la != lb)
-        print(f"  {name}: {len(readings)} readings, {min(readings):.4f} to {max(readings):.4f}, "
-              f"{len(set(readings))} distinct values")
-        if changes:
-            print(f"    changed {len(changes)} times, smallest change {min(changes):.4f}; "
-                  f"{between} of them between whole percent steps ({steps} steps in the file)")
+        lights.append(light)
+        span = t - start[0]
+        if span >= FINE_WINDOW:
+            windows.append((sum(lights) / len(lights), (start[1] - days) * 1440.0 * 3600.0 / span))
+            start = (t, days)
+            lights = []
+    return windows
+
+
+def fine_fit(windows):
+    """Slope of life spent against light, as minutes of life an hour of full
+    sun saves, with its standard error and t: (saving, se, t, dof, spread, sums).
+    sums are the within-activity co-deviations (cxx, cxy, cyy) for pooling."""
+    n = len(windows)
+    if n < 3:
+        return None
+    mx = sum(x for x, _ in windows) / n
+    my = sum(y for _, y in windows) / n
+    cxx = sum((x - mx) ** 2 for x, _ in windows)
+    cxy = sum((x - mx) * (y - my) for x, y in windows)
+    cyy = sum((y - my) ** 2 for _, y in windows)
+    if cxx < 1e-6:
+        return None
+    slope = cxy / cxx
+    resid = max(0.0, cyy - cxy * cxy / cxx)
+    dof = n - 2
+    se = (resid / dof / cxx) ** 0.5 if dof > 0 else float("inf")
+    saving = -slope * 100.0
+    t = (saving / (se * 100.0)) if se > 0 else float("inf")
+    spread = max(x for x, _ in windows) - min(x for x, _ in windows)
+    return saving, se * 100.0, t, n - 1, spread, (cxx, cxy, cyy)
+
+
+def gauge_report(records, at):
+    """The dev branch's days gauge: does it move between the whole percent
+    steps, what did it say the activity spent, and what does its fit say
+    about the sun? Says nothing when the file holds no gauge. Returns the
+    activity's windows for pooling across files, or None."""
+    pairs = [(r.get("battery"), r["battery_days"]) for r in records if r.get("battery_days") is not None]
+    if not pairs:
+        return None
+    heading("THE DAYS GAUGE (dev branch)")
+    readings = [value for _, value in pairs]
+    changes = [abs(b - a) for a, b in zip(readings, readings[1:]) if b != a]
+    between = sum(1 for (la, a), (lb, b) in zip(pairs, pairs[1:]) if b != a and la == lb)
+    steps = sum(1 for (la, _), (lb, _) in zip(pairs, pairs[1:]) if la != lb)
+    print(f"  battery_days: {len(readings)} readings, {min(readings):.4f} to {max(readings):.4f} days, "
+          f"{len(set(readings))} distinct values")
+    if changes:
+        print(f"    changed {len(changes)} times, smallest change {min(changes):.4f} days "
+              f"({min(changes) * 1440:.1f} min of life); {between} between whole percent steps "
+              f"({steps} steps in the file)")
+        print(f"    life spent by the gauge: {(readings[0] - readings[-1]) * 1440:.1f} min")
+    else:
+        print("    never changed")
+    windows = fine_windows(records, at)
+    fit = fine_fit(windows)
+    print(f"  fit on the gauge: {len(windows)} window(s) of {FINE_WINDOW // 60} active minutes")
+    if fit is None:
+        print("    too few windows, or no spread of light, to fit")
+    else:
+        saving, se, t, dof, spread, _ = fit
+        print(f"    full sun saves {saving:+.1f} min of life an hour, se {se:.1f}, t {t:.1f}, "
+              f"light spread {spread:.0f} points")
+        if abs(t) >= 3 and saving > 0:
+            print("    >> the gauge follows the light on this activity alone")
         else:
-            print("    never changed")
-        if between >= 3:
-            print("    >> FINER THAN THE WHOLE PERCENT: this value can be measured against.")
-        else:
-            print("    no finer than the whole percent on this recording")
+            print("    not clear on one activity (the watch needs t >= 3 across activities)")
+    return windows
+
+
+def pooled_report(per_file):
+    """The fixed-effects pool the watch keeps, across every file given: each
+    activity's windows measured against its own means, then summed."""
+    heading(f"THE DAYS GAUGE POOLED OVER {len(per_file)} ACTIVITIES")
+    cxx = cxy = cyy = 0.0
+    dof = 0
+    for windows in per_file:
+        fit = fine_fit(windows)
+        if fit is None:
+            continue
+        _, _, _, d, _, (a, b, c) = fit
+        cxx += a
+        cxy += b
+        cyy += c
+        dof += d
+    if cxx < 1e-6 or dof < 2:
+        print("  nothing to pool yet")
+        return
+    slope = cxy / cxx
+    resid = max(0.0, cyy - cxy * cxy / cxx)
+    se = (resid / (dof - 1) / cxx) ** 0.5
+    saving = -slope * 100.0
+    t = saving / (se * 100.0) if se > 0 else float("inf")
+    print(f"  full sun saves {saving:+.1f} min of life an hour, se {se * 100:.1f}, t {t:.1f}, "
+          f"{dof} degrees of freedom")
+    if t >= 3 and saving > 0:
+        print("  >> PASSES THE WATCH'S GATE: the gauge is a real reading and the bonus would show")
+    else:
+        need = (3.0 / t) ** 2 * len(per_file) if t > 0 else float("inf")
+        print(f"  not yet: at this rate about {need:.0f} activities like these reach t = 3"
+              if need != float("inf") else "  not yet: no benefit from the sun in these files")
 
 
 def heading(title):
@@ -357,6 +457,8 @@ def main(path):
     heading("3. LAP FIELDS - every lap must carry its own value")
     for index, lap in enumerate(laps):
         shown = "  ".join(f"{f}={lap.get(f)}" for f in LAP_FIELDS)
+        if lap.get("lap_life_spent") is not None:
+            shown += f"  lap_life_spent={lap['lap_life_spent']:.1f} min"
         print(f"  lap {index}: elapsed={lap.get('total_elapsed_time')}s  {shown}")
     empty = [i for i, lap in enumerate(laps) if all(lap.get(f) is None for f in LAP_FIELDS)]
     if empty:
@@ -453,7 +555,7 @@ def main(path):
             not_measured.append(f"catching_percent: the sun stayed at or below "
                                 f"{max(elevation)} degrees; catching needs {minimum:.0f}")
 
-    gauge_report(records)
+    windows = gauge_report(records, at)
 
     heading("RESULT")
     if problems:
@@ -467,10 +569,24 @@ def main(path):
         for item in not_measured:
             print(f"    - {item}")
     print("=" * 70)
-    return 1 if problems else 0
+    return (1 if problems else 0), windows
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         sys.exit(__doc__)
-    sys.exit(main(sys.argv[1]))
+    worst = 0
+    pooled = []
+    for path in sys.argv[1:]:
+        if len(sys.argv) > 2:
+            print()
+            print("#" * 70)
+            print(f"# {path}")
+            print("#" * 70)
+        code, windows = main(path)
+        worst = max(worst, code)
+        if windows:
+            pooled.append(windows)
+    if len(sys.argv) > 2:
+        pooled_report(pooled)
+    sys.exit(worst)

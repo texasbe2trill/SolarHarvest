@@ -86,6 +86,16 @@ class SolarModel {
     private var _calDrainPercent as Float = 0.0;
     private var _calCyy as Float = 0.0;
 
+    // The carried fit of the days gauge (BatteryModel.addDays), kept beside
+    // the calibration: [dof, cxx, cxy, minLight, maxLight, cyy].
+    static const FINE_SIZE = 6;
+    private var _fineDof as Float = 0.0;
+    private var _fineCxx as Float = 0.0;
+    private var _fineCxy as Float = 0.0;
+    private var _fineMinX as Float = 1000.0;
+    private var _fineMaxX as Float = -1000.0;
+    private var _fineCyy as Float = 0.0;
+
     function initialize(samplePeriod as Number) {
         _samplePeriod = (samplePeriod < 1) ? 1 : samplePeriod;
         _history = new [HISTORY_SIZE] as Array<Number>;
@@ -180,7 +190,17 @@ class SolarModel {
         updateBattery(v, battery, charging, true);
     }
 
+    // The days gauge, once a second after addSampleWhen().
+    function addDays(days as Float, intensity as Number) as Void {
+        _battery.addDays(days, intensity);
+    }
+
+    function lifeSpentMinutes() as Float? { return _battery.lifeSpentMinutes(); }
+    function gaugeDrainPerHour() as Float? { return _battery.gaugeDrainPerHour(); }
+    function lapLifeSpentMinutes() as Float? { return _battery.lapLifeSpentMinutes(); }
+
     function noteLap() as Void {
+        _battery.noteLapDays();
         _lapHarvestSeconds = 0.0;
         _lapSum = 0.0;
         _lapTicks = 0;
@@ -306,6 +326,87 @@ class SolarModel {
         return _battery.calibrationContribution();
     }
 
+    // -- the days gauge's carried fit -------------------------------------
+
+    function setFineCalibration(c as Array<Float>) as Void {
+        _fineDof = c[0];
+        _fineCxx = c[1];
+        _fineCxy = c[2];
+        _fineMinX = c[3];
+        _fineMaxX = c[4];
+        _fineCyy = c[5];
+    }
+
+    function fineCalibration() as Array<Float> {
+        return [_fineDof, _fineCxx, _fineCxy, _fineMinX, _fineMaxX, _fineCyy] as Array<Float>;
+    }
+
+    function activityFineCalibration() as Array<Float> {
+        return _battery.fineContribution();
+    }
+
+    static function emptyFine() as Array<Float> {
+        return [0.0, 0.0, 0.0, 1000.0, -1000.0, 0.0] as Array<Float>;
+    }
+
+    // Folds one activity's windows into the carried fine fit: the sums add,
+    // and past the cap the older evidence is scaled back first, as
+    // mergeCalibration does.
+    static function mergeFine(prior as Array<Float>, add as Array<Float>) as Array<Float> {
+        var out = emptyFine();
+        var keep = 1.0;
+        if (prior[0] > 0.0 && (prior[0] + add[0]) > CAL_MAX_DOF) {
+            keep = (CAL_MAX_DOF - add[0]) / prior[0];
+            if (keep < 0.0) {
+                keep = 0.0;
+            }
+        }
+        out[0] = (prior[0] * keep) + add[0];
+        out[1] = (prior[1] * keep) + add[1];
+        out[2] = (prior[2] * keep) + add[2];
+        out[5] = (prior[5] * keep) + add[5];
+        if (keep > 0.0 && prior[0] > 0.0) {
+            out[3] = (prior[3] < add[3]) ? prior[3] : add[3];
+            out[4] = (prior[4] > add[4]) ? prior[4] : add[4];
+        } else {
+            out[3] = add[3];
+            out[4] = add[4];
+        }
+        return out;
+    }
+
+    // A stored fine fit read back from `offset`, or null where there is none
+    // or it is not one: storage is checked as untrusted input.
+    static function fineFrom(values as Array, offset as Number) as Array<Float>? {
+        if (values.size() < offset + FINE_SIZE) {
+            return null;
+        }
+        var c = emptyFine();
+        for (var i = 0; i < FINE_SIZE; i++) {
+            var v = values[offset + i];
+            if (!(v instanceof Lang.Float || v instanceof Lang.Number || v instanceof Lang.Double)) {
+                return null;
+            }
+            c[i] = (v as Numeric).toFloat();
+        }
+        if (c[0] < 0.0 || c[1] < 0.0 || c[5] < 0.0) {
+            return null;
+        }
+        return c;
+    }
+
+    // Minutes of battery life an hour of full sun saves, by the days gauge,
+    // across this activity and the earlier ones.
+    function fineSavingPerHour() as Float? {
+        return _battery.fineSavingPerHour(_fineDof, _fineCxx, _fineCxy, _fineMinX, _fineMaxX, _fineCyy);
+    }
+
+    // The same as percent an hour, on the watch's own terms: a day of life is
+    // the level over the days left. Null without a level or a gauge.
+    function fineSavingPercentPerHour() as Float? {
+        return _battery.finePercentPerHour(_fineDof, _fineCxx, _fineCxy, _fineMinX, _fineMaxX, _fineCyy);
+    }
+
     // Folds one activity's contribution into the carried calibration.
     //
     // Sums add, which is what makes the pooled fit exact rather than an average
@@ -401,7 +502,15 @@ class SolarModel {
         if (fresh != null) {
             return fresh;
         }
-        return pooledSavingPerHour();
+        fresh = pooledSavingPerHour();
+        if (fresh != null) {
+            return fresh;
+        }
+        // Then the days gauge, which sees what the percent steps cannot on
+        // short activities, once it has passed the same gates, as percent an
+        // hour. No local more than this frame had: it runs under onUpdate,
+        // where a fatter frame overflowed the stack in the render tests.
+        return _battery.finePercentPerHour(_fineDof, _fineCxx, _fineCxy, _fineMinX, _fineMaxX, _fineCyy);
     }
 
     function pooledSavingPerHour() as Float? {
