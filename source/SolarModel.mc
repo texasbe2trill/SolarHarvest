@@ -517,6 +517,11 @@ class SolarModel {
         return _battery.pooledSavingPerHour(_calDof, _calCxx, _calCxy, _calMinX, _calMaxX, _calCyy);
     }
 
+    // For the page while the bonus measures: how far it is, in percent.
+    function evidencePercent() as Number {
+        return _battery.evidencePercent(_calDof, _calMinX, _calMaxX);
+    }
+
     function effectiveDrain() as Float? {
         var fresh = drainPerHour();
         if (fresh != null) {

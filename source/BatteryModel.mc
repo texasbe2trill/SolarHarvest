@@ -675,6 +675,34 @@ class BatteryModel {
         return (cxy > 0.05) ? cxy : null;
     }
 
+    // How far the Sun Bonus is toward its first figure, 0 to 99: the
+    // intervals pooled so far, this activity's included, against the
+    // classic rule's, and the light's spread against the floor it needs,
+    // whichever is further behind. Even light through many steps stays at
+    // zero, which is the truth: it teaches nothing about the sun. Never a
+    // hundred, since the fit alone decides when there is a figure.
+    function evidencePercent(priorDof as Float, priorMinX as Float, priorMaxX as Float) as Number {
+        var dof = priorDof;
+        var lo = priorMinX;
+        var hi = priorMaxX;
+        if (_n >= 2) {
+            dof += _n - 1;
+            if (_minX < lo) {
+                lo = _minX;
+            }
+            if (_maxX > hi) {
+                hi = _maxX;
+            }
+        }
+        var steps = (dof * 100.0) / (REG_MIN_INTERVALS - 1);
+        var spread = ((hi - lo) * 100.0) / REG_MIN_SPREAD;
+        var p = (steps < spread) ? steps : spread;
+        if (p < 0.0) {
+            p = 0.0;
+        }
+        return (p >= 99.0) ? 99 : p.toNumber();
+    }
+
     // What this activity can add to the cross-activity calibration, as
     // [dof, cxx, cxy, minLight, maxLight, drainHours, drainPercent, cyy].
     //

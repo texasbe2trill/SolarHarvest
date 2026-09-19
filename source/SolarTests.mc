@@ -2042,6 +2042,34 @@ function testSolarBonusIsWithheldWithoutEvidence(logger as Logger) as Boolean {
 
 
 (:test)
+function testTheBonusPageSaysHowFarItIs(logger as Logger) as Boolean {
+    var model = new SolarModel(1);
+    Test.assertMessage(model.evidencePercent() == 0, "nothing measured, nothing to show");
+    // Two hours of even light through eight battery steps: the count grows,
+    // the light's spread holds the readout at zero.
+    // Whole percents, as a watch reports them, so a step is a step.
+    var level = 90.0;
+    for (var i = 0; i < 7200; i++) {
+        level -= 4.0 / 3600.0;
+        model.addSample(55, level.toNumber().toFloat(), false);
+    }
+    var even = model.evidencePercent();
+    // The same two hours with the light swinging every quarter hour: eight
+    // steps, seven intervals of the eleven the classic rule wants.
+    var swing = new SolarModel(1);
+    level = 90.0;
+    for (var i = 0; i < 7200; i++) {
+        level -= 4.0 / 3600.0;
+        swing.addSample((((i / 900) % 2) == 0) ? 100 : 10, level.toNumber().toFloat(), false);
+    }
+    var mixed = swing.evidencePercent();
+    logger.debug("evidence: even light " + even.format("%d") + "%, swinging light " + mixed.format("%d") + "%");
+    Test.assertMessage(even == 0, "even light teaches nothing about the sun, got " + even.format("%d"));
+    Test.assertMessage(mixed >= 50 && mixed <= 75, "seven intervals of eleven, got " + mixed.format("%d"));
+    return true;
+}
+
+(:test)
 function testSunEventsWithoutWeatherData(logger as Logger) as Boolean {
     // The real activity's position and date. Expected values come from an
     // independent scan of the elevation curve for the same day.

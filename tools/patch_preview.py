@@ -29,6 +29,7 @@ s = s[:old_start] + '''    function compute(info as Activity.Info) as Void {
         if (ev != null) {
             _sunrise = ev[0];
             _sunset = ev[1];
+            refreshSunTexts();
         }
         _uvIndex = 7.0;
         _cloudCover = 35;

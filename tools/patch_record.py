@@ -16,6 +16,7 @@ s = s[:start] + '''    function compute(info as Activity.Info) as Void {
         var now = Time.now().value();
         _sunrise = now - 18000;
         _sunset = now + 7400;
+        refreshSunTexts();
         _latRad = 0.5344677444d;
         _lonRad = -1.7081166813d;
         _hasFix = true;
@@ -50,6 +51,12 @@ s = s[:start] + '''    function compute(info as Activity.Info) as Void {
 # auto-cycle every 4s so a short recording covers all five pages
 s = s.replace('        _pageMode = numberProperty("pageMode", 0, 0, PAGE_COUNT);', '        _pageMode = 0;')
 s = s.replace('        _cycleSeconds = numberProperty("cycleSeconds", 8, 3, 60);', '        _cycleSeconds = 4;')
-s = s.replace("        _palette.apply(getBackgroundColor());", "        _palette.apply(Graphics.COLOR_BLACK);")
+# Force the dark theme through the real setting, as patch_preview.py does. The
+# old palette line this patched was renamed by a refactor, so the override
+# silently stopped applying and the recording came out light with the face
+# crop missing. Assert, so a patch that matches nothing fails loudly.
+before = s
+s = s.replace('        _theme = numberProperty("theme", 0, 0, 2);', '        _theme = 1;')
+assert s != before, "theme override did not apply - has loadSettings changed?"
 p.write_text(s)
 print("patched for recording")

@@ -54,11 +54,5 @@ Record one ordinary activity of 20 minutes or more, then look at the two fields 
 
 - **Either value moves between whole percent steps:** the field can read the battery several times finer. The interval fit that already exists would then have several gaps per walk, and Sun Bonus could be measured from a handful of short activities.
 - **Both sit still between steps:** the whole percent gauge is all there is. Measuring what the sun is worth then needs a watcher that sees the whole day, which a data field cannot be.
-
-## Not for release
-
-These two fields are diagnostics. They should not ship in a store build as they are.
-
 The battery page's RATE chip shows the gauge's own reading of the activity's drain from its tenth active minute, marked ~, until two percent steps give a counted one. Connect's labels were made plain at the same time (Battery Level, Battery Days Left, Battery Drain Rate, Sun Caught (of possible), Sun Saving (percent) and Sun Saving (battery life)) and the charts ordered sun first, battery second.
 
-Open question: whether Connect IQ caps an app's developer fields at sixteen. This branch declares nineteen. If the FIT from the first walk lacks ids 16 to 18, that is the cap, and three fields have to go or fold into others.
