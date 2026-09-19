@@ -65,6 +65,11 @@ class SolarPowerView extends WatchUi.DataField {
 
     private var _sunrise as Number = -1;
     private var _sunset as Number = -1;
+    // Their clock times, for the feet of the daylight arc, made when the
+    // events are rather than on the frame: the arc draws under onUpdate,
+    // where the stack is shallow, and the date arithmetic is a call too deep.
+    private var _sunriseText as String = "";
+    private var _sunsetText as String = "";
     private var _sunTick as Number = 0;
     private var _charging as Boolean = false;
     // Whether the activity timer was running at the last compute().
@@ -278,6 +283,7 @@ class SolarPowerView extends WatchUi.DataField {
             _sunrise = -1;
             _sunset = -1;
         }
+        refreshSunTexts();
         _profileValid = false;
         refreshElevation();
         refreshProfile();
@@ -341,6 +347,7 @@ class SolarPowerView extends WatchUi.DataField {
         _daysLeft = readDaysLeft(stats);
         _recording = isRecording(info);
         _model.addSampleWhen(intensity, stats.battery, _charging, _recording);
+        _model.addDays(_daysLeft, intensity);
         if (_activityTag < 0 && (info has :startTime) && info.startTime != null) {
             _activityTag = (info.startTime as Time.Moment).value();
             absorbStalePending();
@@ -349,6 +356,7 @@ class SolarPowerView extends WatchUi.DataField {
         var fit = _fit;
         if (fit != null) {
             fit.update(_model, _elevation, _hasFix);
+            fit.updateGauge(_daysLeft);
         }
         updateSunTimes(info);
         readHeading(info);
@@ -521,6 +529,7 @@ class SolarPowerView extends WatchUi.DataField {
         _model.reset();
         _sunrise = -1;
         _sunset = -1;
+        refreshSunTexts();
         _sunTick = 0;
         _manualPage = 0;
         _elevation = -99.0;
@@ -693,8 +702,27 @@ class SolarPowerView extends WatchUi.DataField {
         var room = x1 - x0;
         var leftW = pairWidth(dc, leftLabel, left);
         var rightW = pairWidth(dc, rightLabel, right);
+        var pair = right.length() > 0 && (leftW + rightW + CHIP_GAP) <= room;
+        if (!pair && right.length() > 0 && hasDigit(right)) {
+            // Two numbers beat one, and a number beats its name: shed the
+            // right chip's label, then the left's, before the row goes to one
+            // chip. Only for a figure that carries its own unit: "4.6h" or
+            // "93%" reads bare beside the page's title, where a compass
+            // point or a word ("W", "SURPLUS") without its name is a riddle,
+            // and the row is better off with one whole chip.
+            rightW = pairWidth(dc, "", right);
+            if ((leftW + rightW + CHIP_GAP) <= room) {
+                rightLabel = "";
+                pair = true;
+            } else if ((pairWidth(dc, "", left) + rightW + CHIP_GAP) <= room) {
+                leftLabel = "";
+                rightLabel = "";
+                leftW = pairWidth(dc, "", left);
+                pair = true;
+            }
+        }
 
-        if (right.length() > 0 && (leftW + rightW + CHIP_GAP) <= room) {
+        if (pair) {
             drawChip(dc, x0, y, leftLabel, left, chipLeftColor(page), false);
             drawChip(dc, x1, y, rightLabel, right, _palette.fg, true);
         } else if (leftW <= room) {
@@ -707,6 +735,16 @@ class SolarPowerView extends WatchUi.DataField {
             dc.drawText((x0 + x1) / 2, y, Graphics.FONT_XTINY, left,
                 Graphics.TEXT_JUSTIFY_CENTER);
         }
+    }
+
+    private function hasDigit(text as String) as Boolean {
+        var chars = text.toCharArray();
+        for (var i = 0; i < chars.size(); i++) {
+            if (chars[i] >= '0' && chars[i] <= '9') {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function pairWidth(dc as Dc, label as String, value as String) as Number {
@@ -859,14 +897,17 @@ class SolarPowerView extends WatchUi.DataField {
             var flow = _model.netFlowPerHour();
             return (flow != null && flow < -0.05) ? "BATTERY GAIN" : "BATTERY";
         } else if (page == PAGE_WINDOW) {
-            // The clock time lives in the title because the title row is wider
-            // than the chip row on a round screen. That frees the chips to carry
-            // two values instead of dropping one for want of a few pixels.
+            // The title names the hero, the time left in the light, as every
+            // other title names its hero: "SUNSET 7:41" over "5:41" left the
+            // big number with no name, and wearers read it as a second clock.
+            // The clock time of sunset stands at the foot of the daylight arc,
+            // where the day ends. Only while there is no arc to stand it on,
+            // before the sun profile is built, does the time stay up here.
             var state = sunState();
             if (state == SUN_DAWN) {
-                return (_sunrise > 0) ? "SUNRISE " + clockText(_sunrise) : "TO SUNRISE";
+                return (_sunrise > 0 && profilePeak() <= 0) ? "SUNRISE " + clockText(_sunrise) : "TO SUNRISE";
             } else if (state == SUN_DAY) {
-                return (_sunset > 0) ? "SUNSET " + clockText(_sunset) : "TO SUNSET";
+                return (_sunset > 0 && profilePeak() <= 0) ? "SUNSET " + clockText(_sunset) : "TO SUNSET";
             } else if (state == SUN_NIGHT) {
                 return "AFTER DARK";
             }
@@ -889,23 +930,28 @@ class SolarPowerView extends WatchUi.DataField {
         } else if (page == PAGE_BONUS) {
             // The tilde is the app's existing mark for a figure resting on what
             // earlier activities taught this watch rather than on this one.
-            return _model.bonusIsLearned() ? "~SUN BONUS" : "SUN BONUS";
+            // Only over a figure: while the page still measures there is
+            // nothing for the mark to qualify, and it read as a riddle.
+            return (_model.solarBonusMinutes() != null && _model.bonusIsLearned()) ? "~SUN BONUS" : "SUN BONUS";
         }
         return "SOLAR NOW";
     }
 
+    // One rule for every time on the field: a colon is a clock time, "h" and
+    // "m" are a duration. "FULL SUN 23:46" read as a quarter to midnight, and
+    // "5:41" under "SUNSET 7:41" read as a second clock.
     private function heroText(page as Number) as String {
         if (page == PAGE_HARVEST) {
-            return formatClock(_model.harvestSeconds());
+            return formatMinutes(_model.harvestSeconds());
         } else if (page == PAGE_BATTERY) {
             var level = _model.batteryPercent();
             return (level < 0.0) ? "--" : level.format("%d") + "%";
         } else if (page == PAGE_WINDOW) {
             var state = sunState();
             if (state == SUN_DAWN || state == SUN_DAY) {
-                return formatClock(sunWindowRemaining(nowSeconds(), _sunrise, _sunset));
+                return formatMinutes(sunWindowRemaining(nowSeconds(), _sunrise, _sunset));
             } else if (state == SUN_NIGHT) {
-                return "0:00";
+                return "0m";
             }
             return percentText(_model.sunFraction());
         }
@@ -992,11 +1038,11 @@ class SolarPowerView extends WatchUi.DataField {
         } else if (page == PAGE_BATTERY) {
             return "RATE";
         } else if (page == PAGE_WINDOW) {
-            // "AHEAD" alone answers nothing - ahead of what? The value is a
-            // forecast of full-sun minutes still to come before sunset, so the
-            // label says that much directly instead of naming the concept
-            // implicitly.
-            return (sunState() == SUN_DAY) ? "MORE SUN" : "PEAK";
+            // The value is a forecast of the full sun still to come before
+            // sunset at the rate the panel is catching it now. "MORE SUN" left
+            // wearers asking more than what; "SUN LEFT" under the sunset time
+            // says it.
+            return (sunState() == SUN_DAY) ? "SUN LEFT" : "PEAK";
         } else if (page == PAGE_SKY) {
             // No label on the states that are already a whole sentence.
             if (!_hasFix || skyPercent() == null) {
@@ -1006,7 +1052,12 @@ class SolarPowerView extends WatchUi.DataField {
         } else if (page == PAGE_COMPASS) {
             return "SUN";
         } else if (page == PAGE_BONUS) {
-            return (bonusSplit() == null) ? "" : "WAS";
+            // While it measures, the label names the state and the value says
+            // how far along it is, so an empty page is never a silent one.
+            // Once there is a figure, the chip is the counterfactual: the drain
+            // with the panel unlit. "WAS" did not say whose drain it was, and
+            // "NO SUN", which did, was the one word too many for the row.
+            return (bonusSplit() == null) ? "MEASURING" : "UNLIT";
         }
         return "AVG";
     }
@@ -1017,7 +1068,7 @@ class SolarPowerView extends WatchUi.DataField {
         } else if (page == PAGE_BATTERY) {
             return runtimeLabel();
         } else if (page == PAGE_WINDOW) {
-            return "SUN";
+            return "";
         } else if (page == PAGE_SKY) {
             if (!_hasFix) {
                 return "";
@@ -1027,6 +1078,9 @@ class SolarPowerView extends WatchUi.DataField {
             }
             return (_uvIndex >= 0.0) ? "UV" : "";
         } else if (page == PAGE_BONUS) {
+            // "FULL SUN" is the honest name, and it cost the row this chip on
+            // every screen beside NO SUN; the page's own title is the sun's, so
+            // "SUN" beside minutes reads as the sun's minutes.
             return "SUN";
         } else if (page == PAGE_COMPASS) {
             return (_heading < 0.0) ? "" : "YOU";
@@ -1037,17 +1091,18 @@ class SolarPowerView extends WatchUi.DataField {
     private function chipLeft(page as Number) as String {
         if (page == PAGE_HARVEST) {
             // Runtime gained reads far better than a rate, so it wins when the
-            // measurement supports it; the rate is the fallback, and the plain
-            // sun share is what is left when neither has enough evidence.
-            // Three tiers, all true. The bonus measured here; the same figure
-            // from what earlier activities taught this watch, marked with "~";
-            // and failing both, the harvest itself, which is exact from the very
-            // first second. The chip is never empty and never invented.
+            // measurement supports it: the bonus measured here, or the same
+            // figure from what earlier activities taught this watch, marked
+            // with "~". Failing both, the share of the activity spent in sun,
+            // which is exact from the first second and is not the hero said
+            // again: the full-sun time was here as minutes under a hero that
+            // showed the same minutes. The chip is never empty and never
+            // invented.
             var bonus = _model.solarBonusMinutes();
             if (bonus != null) {
                 return "+" + bonus.format("%d") + "m";
             }
-            return formatMinutes(_model.harvestSeconds());
+            return percentText(_model.sunFraction());
         } else if (page == PAGE_BATTERY) {
             return drainText();
         } else if (page == PAGE_WINDOW) {
@@ -1080,9 +1135,11 @@ class SolarPowerView extends WatchUi.DataField {
             // This is the counterfactual: what the hour would have cost unlit.
             var split = bonusSplit();
             if (split == null) {
-                return "MEASURING";
+                return _model.evidencePercent().format("%d") + "%";
             }
-            return "-" + (split[0] + split[1]).format("%.1f") + "%/h";
+            // Whole percent: this is a comparison, not a measurement, and the
+            // decimal cost the row its second chip on every screen.
+            return "-" + (split[0] + split[1]).format("%.0f") + "%/h";
         }
         return _model.average().format("%d") + "%";
     }
@@ -1125,7 +1182,11 @@ class SolarPowerView extends WatchUi.DataField {
         } else if (page == PAGE_BATTERY) {
             return runtimeText();
         } else if (page == PAGE_WINDOW) {
-            return percentText(_model.sunFraction());
+            // One chip, whole: the share of time in sun never fit beside the
+            // forecast on any screen, and it has its labelled place on the
+            // Full Sun page now. A second number with its name shed reads as
+            // a mystery, and this page had one already.
+            return "";
         } else if (page == PAGE_SKY) {
             if (!_hasFix) {
                 return "";
@@ -1166,6 +1227,14 @@ class SolarPowerView extends WatchUi.DataField {
         var ceiling = _model.drainCeilingPerHour();
         if (ceiling != null) {
             return "<" + ceiling.format("%.1f") + "%/h";
+        }
+        // Then the days gauge's own reading of this activity, from its tenth
+        // minute, marked as an estimate the way the learned bonus is: it is
+        // the watch's gauge, not a counted percent step. (The same local
+        // again: this runs under onUpdate, where a fatter frame overflows.)
+        ceiling = _model.gaugeDrainPerHour();
+        if (ceiling != null) {
+            return "~" + ceiling.format("%.1f") + "%/h";
         }
         // Garmin's own batteryInDays is a smartwatch-mode figure, several times
         // lower than the drain of a GPS activity. Quoting it here as though it
@@ -2178,6 +2247,24 @@ class SolarPowerView extends WatchUi.DataField {
         dc.drawLine(nowX, y, nowX, y + h);
         dc.setPenWidth(1);
         drawBaseline(dc, x, y, w, h);
+        // The clock time of the end of the light at the foot of the arc where
+        // the day ends: sunset at the right by day, sunrise at the left before
+        // dawn, on a patch of the ground so the hatching does not cross it.
+        var text = (sunState() == SUN_DAWN) ? _sunriseText : _sunsetText;
+        if (text.length() > 0) {
+            var tw = dc.getTextWidthInPixels(text, Graphics.FONT_XTINY);
+            var th = dc.getFontHeight(Graphics.FONT_XTINY);
+            var tx = (sunState() == SUN_DAWN) ? x : x + w - tw;
+            dc.setColor(_palette.bg, Graphics.COLOR_TRANSPARENT);
+            dc.fillRectangle(tx - 2, y + h - th, tw + 4, th);
+            dc.setColor(_palette.dim, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(tx, y + h - th, Graphics.FONT_XTINY, text, Graphics.TEXT_JUSTIFY_LEFT);
+        }
+    }
+
+    private function refreshSunTexts() as Void {
+        _sunriseText = (_sunrise > 0) ? clockText(_sunrise) : "";
+        _sunsetText = (_sunset > 0) ? clockText(_sunset) : "";
     }
 
     private function drawBaseline(dc as Dc, x as Number, y as Number, w as Number, h as Number) as Void {
@@ -2253,6 +2340,10 @@ class SolarPowerView extends WatchUi.DataField {
                 if (c != null) {
                     _model.setCalibration(c);
                 }
+                var f = SolarModel.fineFrom(stored, 1 + SolarModel.CAL_SIZE);
+                if (f != null) {
+                    _model.setFineCalibration(f);
+                }
             }
             migrateLegacy(stored == null);
         } catch (ex) {
@@ -2273,7 +2364,7 @@ class SolarPowerView extends WatchUi.DataField {
             && (saving instanceof Lang.Float || saving instanceof Lang.Number || saving instanceof Lang.Double)) {
             var seed = SolarModel.calibrationFromLegacy((saving as Numeric).toFloat());
             if (seed != null) {
-                storeCalibration(seed);
+                storeCalibration(seed, SolarModel.emptyFine());
             }
         }
         Application.Storage.deleteValue(LEGACY_SAVING_KEY);
@@ -2290,16 +2381,19 @@ class SolarPowerView extends WatchUi.DataField {
                 return;
             }
             var add = null;
+            var addFine = null;
             if (pending.size() > 1 && pending[0] == CAL_VERSION
                 && (pending[1] instanceof Lang.Number || pending[1] instanceof Lang.Long)) {
                 if ((pending[1] as Numeric).toNumber() == _activityTag) {
                     return;
                 }
                 add = SolarModel.calibrationFrom(pending, 2);
+                addFine = SolarModel.fineFrom(pending, 2 + SolarModel.CAL_SIZE);
             }
             Application.Storage.deleteValue(CAL_PENDING_KEY);
             if (add != null) {
-                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), add));
+                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), add),
+                    (addFine != null) ? SolarModel.mergeFine(_model.fineCalibration(), addFine) : _model.fineCalibration());
             }
         } catch (ex) {
             // Left for the next activity to try again.
@@ -2313,13 +2407,16 @@ class SolarPowerView extends WatchUi.DataField {
             return;
         }
         var a = _model.activityCalibration();
-        if (a[0] <= 0.0 && a[5] <= 0.0) {
+        var f = _model.activityFineCalibration();
+        if (a[0] <= 0.0 && a[5] <= 0.0 && f[0] <= 0.0) {
             return;
         }
         try {
+            // The classic eight (the scatter included, so the read side takes
+            // it as it is and not as the legacy seven), then the gauge's six.
             Application.Storage.setValue(CAL_PENDING_KEY,
-                [CAL_VERSION, _activityTag, a[0], a[1], a[2], a[3], a[4], a[5], a[6]]
-                    as Array<Numeric>);
+                [CAL_VERSION, _activityTag, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7],
+                 f[0], f[1], f[2], f[3], f[4], f[5]] as Array<Numeric>);
         } catch (ex) {
             // Not being able to remember is not a reason to fail the activity.
         }
@@ -2330,9 +2427,11 @@ class SolarPowerView extends WatchUi.DataField {
         try {
             absorbStalePending();
             var a = _model.activityCalibration();
+            var f = _model.activityFineCalibration();
             Application.Storage.deleteValue(CAL_PENDING_KEY);
-            if (a[0] > 0.0 || a[5] > 0.0) {
-                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), a));
+            if (a[0] > 0.0 || a[5] > 0.0 || f[0] > 0.0) {
+                storeCalibration(SolarModel.mergeCalibration(_model.calibration(), a),
+                    SolarModel.mergeFine(_model.fineCalibration(), f));
             }
         } catch (ex) {
             // The snapshot, if written, is folded in by the next activity.
@@ -2340,10 +2439,15 @@ class SolarPowerView extends WatchUi.DataField {
         _activityTag = -1;
     }
 
-    private function storeCalibration(c as Array<Float>) as Void {
+    // The calibration and the days gauge's fit together under one key: the
+    // classic eight after the version, then the gauge's six. A record from
+    // before the gauge is read as it was, with no fit carried.
+    private function storeCalibration(c as Array<Float>, f as Array<Float>) as Void {
         _model.setCalibration(c);
+        _model.setFineCalibration(f);
         Application.Storage.setValue(CAL_KEY,
-            [CAL_VERSION, c[0], c[1], c[2], c[3], c[4], c[5], c[6], SolarModel.cyyOf(c)] as Array<Numeric>);
+            [CAL_VERSION, c[0], c[1], c[2], c[3], c[4], c[5], c[6], SolarModel.cyyOf(c),
+             f[0], f[1], f[2], f[3], f[4], f[5]] as Array<Numeric>);
     }
 
     private function percentText(fraction as Float) as String {
@@ -2485,11 +2589,13 @@ class SolarPowerView extends WatchUi.DataField {
                 if (events != null) {
                     _sunrise = events[0];
                     _sunset = events[1];
+                    refreshSunTexts();
                 }
             }
         } catch (ex) {
             _sunrise = -1;
             _sunset = -1;
+            refreshSunTexts();
             _hasFix = false;
         }
         updateWeather();
