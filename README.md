@@ -110,7 +110,7 @@ That spans three Connect IQ API generations and three physical screen sizes (240
 
 ## Getting it on your watch
 
-Install it from the Connect IQ Store on your phone or at [apps.garmin.com](https://apps.garmin.com). If you would rather build it from source, see below.
+Install it from the Connect IQ Store on your phone or from [its store page](https://apps.garmin.com/en-US/apps/b0d0fd86-bc11-4d9a-9f78-40db5c7b7fa0). If you would rather build it from source, see below.
 
 ## Building it yourself
 
@@ -186,8 +186,8 @@ Issues and pull requests are welcome. If you are proposing a design change, a sc
 
 [PolyForm Noncommercial License 1.0.0](LICENSE.md). Use it, learn from it, fork it, adapt it for your own watch face or data field. Just do not sell it, or a product built on it, or a service built around it. If you are a business and want to do something this license does not allow, open an issue and let's talk.
 
-## Supporting this project ☕
+## Supporting this project
 
 Solar Harvest is free on the Connect IQ Store and always will be. If it made your watch a little more interesting and you would like to say thanks, you can do that here:
 
-> [Ko-fi/texasbe2trill](https://www.ko-fi.com/texasbe2trill)
+> ☕ [Ko-fi/texasbe2trill](https://www.ko-fi.com/texasbe2trill)
