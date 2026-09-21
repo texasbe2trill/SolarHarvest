@@ -2,7 +2,7 @@
 
 **A Connect IQ data field that finally tells you what your solar watch is actually doing with all that sunlight.**
 
-![Solar Harvest hero](docs/hero-1440x720.png)
+![Solar Harvest hero](docs/store/hero-1440x720.gif)
 
 Garmin put a solar panel on your watch. It shows you a tiny sun icon and calls it a day. Solar Harvest rips that icon off and replaces it with an entire measurement instrument: real drain and gain rates measured from your own battery (not a marketing constant), a live sun compass that tracks the sky, a battery icon that actually animates, and enough honest, well tested data science to make you feel like your watch has a PhD in astrophysics.
 
@@ -53,7 +53,7 @@ One rule for every time on the field: a colon is a clock time (the 7:41 at the f
 
 An animated preview, captured straight from the simulator:
 
-![Cycling through every page](docs/solar-harvest.gif)
+![Cycling through every page](docs/store/cover-500x500.gif)
 
 ## When each number appears
 
