@@ -1,7 +1,7 @@
 project.manifest = manifest.xml
 
 # Every supported product is a round MIP fenix-family solar watch, so there is no
-# longer a 1-bit build variant and the palette is a single colour implementation.
+# longer a 1-bit build variant and the palette is a single color implementation.
 
 # The fenix 6 generation runs Connect IQ 3.4 and the fenix 7 generation 5.2.0.
 # onTimerLap2 and its LapInfoType arrived in 5.2.2, so the symbol has to be

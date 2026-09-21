@@ -1,7 +1,7 @@
 """Builds docs/hero-1440x720.png.
 
 A golden hour sky with the sun on its own arc: solid where it has already
-travelled, dotted where it still has to go, which is the same convention the
+traveled, dotted where it still has to go, which is the same convention the
 compass page draws on the watch. Everything renders at 2x and downsamples, so
 the type and the arc keep clean edges, and the sky carries a little grain
 because a gradient this large bands without it.
@@ -63,7 +63,7 @@ glow = glow.filter(ImageFilter.GaussianBlur(62*S))
 img = Image.fromarray(np.clip(np.asarray(img).astype(int) + np.asarray(glow).astype(int), 0, 255).astype(np.uint8))
 
 d = ImageDraw.Draw(img, 'RGBA')
-# The travelled half fades as it recedes, so the path emerges out of the sky
+# The traveled half fades as it recedes, so the path emerges out of the sky
 # instead of cutting across the copy. The half still to come stays dotted.
 for i in range(420):
     t0 = 150 - i*0.34

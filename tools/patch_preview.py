@@ -48,7 +48,7 @@ s = s[:old_start] + '''    function compute(info as Activity.Info) as Void {
         for (var k = 0; k < 220; k++) {
             var v = t[_pv % t.size()];
             _pv += 1;
-            // A gentle, realistic drain: ~1 point per 3.5 simulated minutes.
+            // A gentle, realiztic drain: ~1 point per 3.5 simulated minutes.
             var lvl = (90 - (_pv / 210)).toFloat();
             if (lvl < 78.0) { lvl = 78.0; }
             _model.addSample(v, lvl, false);

@@ -17,7 +17,7 @@ const DEGREE = "\u00B0";
 // never touched in normal operation.
 var gSkipFitRecording as Boolean = false;
 
-// Solar Harvest: live intensity, harvest integral, measured battery behaviour and
+// Solar Harvest: live intensity, harvest integral, measured battery behavior and
 // the real daylight window. Every optional API is feature-detected so the field
 // degrades gracefully instead of crashing an activity.
 class SolarPowerView extends WatchUi.DataField {
@@ -97,7 +97,7 @@ class SolarPowerView extends WatchUi.DataField {
     // The same bearings walked sequentially so the series is continuous: a day
     // sweeps roughly 190 degrees, which no single fold to within +/-180 of one
     // reference can represent - folding sent every afternoon bearing a whole turn
-    // backwards and collapsed half the arc off the left of the chart.
+    // backward and collapsed half the arc off the left of the chart.
     private var _azWalk as Array<Number>;
     private var _profileValid as Boolean = false;
 
@@ -483,7 +483,7 @@ class SolarPowerView extends WatchUi.DataField {
 
     // No LapInfoType on this path (pre-5.2.2 firmware), so there is no way to
     // tell a button press from an auto-lap here. Treating every lap as manual
-    // is the same behaviour this app always had before the distinction existed
+    // is the same behavior this app always had before the distinction existed
     // above, not a regression - just the best available answer on older devices.
     //
     // Nor does this callback promise when the lap record is written, so it keeps
@@ -572,9 +572,9 @@ class SolarPowerView extends WatchUi.DataField {
         // The dial is drawn just inside the glass, so every row has to be pulled
         // in by its thickness or the page title runs straight through the arc.
         // The dial sweeps from 7 o'clock over the top to 5 o'clock, so its lowest
-        // point is half a radius below centre; rows under that are already clear.
+        // point is half a radius below center; rows under that are already clear.
         // The gauge sweeps from 7 o'clock over the top to 5 o'clock, so its lowest
-        // point is half a radius below centre and rows under that are already
+        // point is half a radius below center and rows under that are already
         // clear of it. The compass ring is a full circle and clears nothing, so
         // on that page the inset has to hold for every row on the screen -
         // without this its arc and chips ran out under the ring.
@@ -828,7 +828,7 @@ class SolarPowerView extends WatchUi.DataField {
         return [lit, paid] as Array<Float>;
     }
 
-    // How much of the hour the sun cancelled, as a percentage of what it would
+    // How much of the hour the sun canceled, as a percentage of what it would
     // otherwise have cost.
     private function offsetSharePercent() as Number {
         var split = bonusSplit();
@@ -1026,7 +1026,7 @@ class SolarPowerView extends WatchUi.DataField {
     // The quiet half of a chip: what the number is, never the number itself.
     //
     // Splitting the two is what turns a row of same-weight text into something
-    // scannable. "AVG 54%" set in one colour makes the reader parse a sentence;
+    // scannable. "AVG 54%" set in one color makes the reader parse a sentence;
     // a dim "AVG" beside a bright "54%" lets the eye take the value first and the
     // name only if it needs it. Empty when the value speaks for itself.
     private function chipLeftLabel(page as Number) as String {
@@ -1147,7 +1147,7 @@ class SolarPowerView extends WatchUi.DataField {
     // How high the sun actually is, above the horizon. This is the number that
     // explains a low reading that is nobody's fault.
     //
-    // Labelled "UP" rather than as an elevation or altitude: on a watch both of
+    // Labeled "UP" rather than as an elevation or altitude: on a watch both of
     // those words already mean terrain height, and a bare "SUN 47" reads as a
     // temperature or a bearing.
     private function sunHeightText() as String {
@@ -1157,9 +1157,9 @@ class SolarPowerView extends WatchUi.DataField {
         return _elevation.format("%.0f") + DEGREE + " UP";
     }
 
-    // The battery flow reads in the same colour as the trace above it; every
+    // The battery flow reads in the same color as the trace above it; every
     // other chip stays quiet so the hero keeps the page's attention.
-    // The colour of a chip's number. Plain white unless the value carries a
+    // The color of a chip's number. Plain white unless the value carries a
     // direction worth seeing - never dim, which is the label's weight: a value
     // set at label weight is the split undone.
     private function chipLeftColor(page as Number) as Number {
@@ -1183,7 +1183,7 @@ class SolarPowerView extends WatchUi.DataField {
             return runtimeText();
         } else if (page == PAGE_WINDOW) {
             // One chip, whole: the share of time in sun never fit beside the
-            // forecast on any screen, and it has its labelled place on the
+            // forecast on any screen, and it has its labeled place on the
             // Full Sun page now. A second number with its name shed reads as
             // a mystery, and this page had one already.
             return "";
@@ -1239,7 +1239,7 @@ class SolarPowerView extends WatchUi.DataField {
         // Garmin's own batteryInDays is a smartwatch-mode figure, several times
         // lower than the drain of a GPS activity. Quoting it here as though it
         // were this activity's rate is exactly the misleading part, so it only
-        // appears in the runtime chip, explicitly labelled.
+        // appears in the runtime chip, explicitly labeled.
         return "DRAIN --";
     }
 
@@ -1290,8 +1290,8 @@ class SolarPowerView extends WatchUi.DataField {
     // Intensity dial, concentric with the watch bezel rather than with the field
     // rectangle, sweeping from 7 o'clock over the top to 5 o'clock.
     //
-    // A dial shows one number, so the filled arc is a single hue - the colour of
-    // the value it is reporting. Colouring each segment by its own position on the
+    // A dial shows one number, so the filled arc is a single hue - the color of
+    // the value it is reporting. Coloring each segment by its own position on the
     // scale turns the dial into a rainbow that reads as three unrelated things
     // rather than one measurement.
     // Thickness of the dial plus the clearance content needs from it.
@@ -1334,7 +1334,7 @@ class SolarPowerView extends WatchUi.DataField {
             dc.drawArc(cx, cy, r, Graphics.ARC_CLOCKWISE, start, (end + 360) % 360);
         }
 
-        // A graduated scale, cut out of the track in the background colour rather
+        // A graduated scale, cut out of the track in the background color rather
         // than added as more ink. A gauge with no scale on it is decoration;
         // these are what let the arc be read as a value instead of just "more"
         // or "less".
@@ -1401,13 +1401,13 @@ class SolarPowerView extends WatchUi.DataField {
         dc.setColor(_palette.muted, Graphics.COLOR_TRANSPARENT);
         dc.drawArc(cx, cy, r, Graphics.ARC_CLOCKWISE, 0, 360);
 
-        // Eight points, not four. Cutting only N/E/S/W in the background colour
+        // Eight points, not four. Cutting only N/E/S/W in the background color
         // made them all but invisible against a black face - a gap the same
         // shade as the screen behind it reads as nothing at all, which is why
         // this looked like a bare ring with two stray marks rather than a
         // compass. Ticks are now drawn IN the dim tone instead of cut out, at
         // eight points, so the ring reads as a compass rose on its own, with no
-        // need to already know where north is to recognise it as one.
+        // need to already know where north is to recognize it as one.
         dc.setColor(_palette.dim, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth((width + 2) / 2);
         for (var q = 0; q < 8; q++) {
@@ -1481,10 +1481,10 @@ class SolarPowerView extends WatchUi.DataField {
             }
         }
 
-        // The sun itself. A fixed warm colour rather than the brightness ramp:
+        // The sun itself. A fixed warm color rather than the brightness ramp:
         // that ramp runs red at its dark end, and a red mark sitting alone on a
         // compass with nothing beside it to say "this means dim" reads as a
-        // warning, not as a weak sun. The arc below still colours its own sun by
+        // warning, not as a weak sun. The arc below still colors its own sun by
         // intensity - it sits on a dome that gives that reading context; this
         // one does not, so it stays legible instead.
         if (_azimuth >= 0.0) {
@@ -1494,7 +1494,7 @@ class SolarPowerView extends WatchUi.DataField {
             // out from the track because it annotates it; here the sun is not an
             // annotation, it IS what the ring is showing - and anything thicker
             // than the band reaches inside the inset the layout reserves and
-            // lands on the hero. It earns its prominence from colour and from
+            // lands on the hero. It earns its prominence from color and from
             // being the widest thing on the ring instead.
             dc.setPenWidth(width);
             dc.drawArc(cx, cy, r, Graphics.ARC_CLOCKWISE, (sunAt + 11) % 360, (sunAt - 11 + 360) % 360);
@@ -1597,7 +1597,7 @@ class SolarPowerView extends WatchUi.DataField {
         } else if (page == PAGE_SKY) {
             var sky = skyPercent();
             // Deliberately off the intensity ramp in the fallback: the ring is
-            // reporting a height, not a brightness, and colouring it like light
+            // reporting a height, not a brightness, and coloring it like light
             // would invite it to be read as one.
             return (sky == null) ? _palette.fg : _palette.intensity(sky);
         }
@@ -1651,7 +1651,7 @@ class SolarPowerView extends WatchUi.DataField {
         if (startX < x) {
             startX = x;
         }
-        var lastColour = -1;
+        var lastColor = -1;
         for (var i = 0; i < n; i++) {
             var v = _model.sampleAt(i);
             var barH = (h * v) / 100;
@@ -1659,12 +1659,12 @@ class SolarPowerView extends WatchUi.DataField {
                 barH = 2;
             }
             if (barH > 0) {
-                // Neighbouring columns usually land in the same heat band, so
-                // only touch the graphics state when the colour really changes.
-                var colour = _palette.intensity(v);
-                if (colour != lastColour) {
-                    dc.setColor(colour, Graphics.COLOR_TRANSPARENT);
-                    lastColour = colour;
+                // Neighboring columns usually land in the same heat band, so
+                // only touch the graphics state when the color really changes.
+                var color = _palette.intensity(v);
+                if (color != lastColor) {
+                    dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+                    lastColor = color;
                 }
                 dc.fillRectangle(startX + (i * barW), y + h - barH, barW, barH);
             }
@@ -1693,7 +1693,7 @@ class SolarPowerView extends WatchUi.DataField {
     }
 
     // Cumulative harvest: filled area under a bright stroke. The fill is a dimmed
-    // accent rather than grey, so the band and its edge read as one object.
+    // accent rather than gray, so the band and its edge read as one object.
     private function drawCumulative(dc as Dc, x as Number, y as Number, w as Number, h as Number) as Void {
         var n = _model.count();
         if (n < 2) {
@@ -1708,7 +1708,7 @@ class SolarPowerView extends WatchUi.DataField {
             drawBaseline(dc, x, y, w, h);
             return;
         }
-        // Two passes, each setting its colour once. Setting colour and pen width
+        // Two passes, each setting its color once. Setting color and pen width
         // per sample costs more than the drawing does at this size.
         var stepX = w.toFloat() / (n - 1);
         var running = 0;
@@ -1726,7 +1726,7 @@ class SolarPowerView extends WatchUi.DataField {
             prevY = py;
         }
         // Even-pace reference: the straight line the curve would follow if the
-        // sun had delivered at a constant rate for the whole activity. Normalising
+        // sun had delivered at a constant rate for the whole activity. Normalizing
         // by the total means this curve ALWAYS ends in the top right corner, so
         // without a reference its shape says nothing - you cannot tell a bowed
         // curve from a straight one by eye. Against the diagonal it becomes a
@@ -2146,8 +2146,8 @@ class SolarPowerView extends WatchUi.DataField {
             dc.setColor(_palette.intensity(marks[z] + 5), Graphics.COLOR_TRANSPARENT);
             dc.fillRectangle(cursor, top, segW, barH);
             // A hairline of background between shares. Without it the bar is one
-            // block of shifting colour and a share too narrow to label simply
-            // vanishes, which leaves the labelled ones looking like they should
+            // block of shifting color and a share too narrow to label simply
+            // vanishes, which leaves the labeled ones looking like they should
             // add up to a hundred and failing to.
             if (cursor > x) {
                 dc.setColor(_palette.bg, Graphics.COLOR_TRANSPARENT);
@@ -2156,7 +2156,7 @@ class SolarPowerView extends WatchUi.DataField {
             cursor += segW;
         }
 
-        // Direct labelling under each share, which the field has no room for a
+        // Direct labeling under each share, which the field has no room for a
         // legend to do.
         if (_zoneLabelH > 0 && barH < h) {
             cursor = x;
@@ -2223,7 +2223,7 @@ class SolarPowerView extends WatchUi.DataField {
                 // obvious encoding is to dim the future, and that is what this
                 // used to do, but it put the one half of the chart the user can
                 // still act on at the lowest contrast on the page: on a reflective
-                // display a grey fill on black is all but gone in sunlight.
+                // display a gray fill on black is all but gone in sunlight.
                 // Emphasis should follow what is actionable, not what is past.
                 var behind = (px <= nowX);
                 dc.setColor(_palette.accentFill, Graphics.COLOR_TRANSPARENT);
@@ -2690,7 +2690,7 @@ class SolarPowerView extends WatchUi.DataField {
         }
 
         // Walk the bearings into a continuous series, stepping by the shortest
-        // turn between neighbours. Consecutive samples are only a few degrees
+        // turn between neighbors. Consecutive samples are only a few degrees
         // apart, so the step is never ambiguous, and the running total stays
         // monotonic across a sweep of any width and across the 0/360 seam.
         var acc = 0;

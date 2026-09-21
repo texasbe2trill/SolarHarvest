@@ -344,8 +344,8 @@ function testLayoutDropsInPriorityOrder(logger as Logger) as Boolean {
 function testLayoutHeroStaysCentered(logger as Logger) as Boolean {
     var planner = new LayoutPlanner(10, 200, 14, 7, false);
     var center = planner.heroCenterY();
-    Test.assertMessage(center > planner.heroY, "hero centre is inside the hero band");
-    Test.assertMessage(center < (planner.heroY + planner.heroH), "hero centre is inside the hero band");
+    Test.assertMessage(center > planner.heroY, "hero center is inside the hero band");
+    Test.assertMessage(center < (planner.heroY + planner.heroH), "hero center is inside the hero band");
     Test.assertMessage(!planner.showDots, "dots are hidden when not requested");
     return true;
 }
@@ -378,7 +378,7 @@ function testSafeAreaStaysInsideTheCircle(logger as Logger) as Boolean {
             var limit = 140 - SafeArea.MARGIN;
             var dx = area.centerAt(y) - 140;
             Test.assertMessage((dx * dx) + (dy * dy) <= (limit * limit) + 1,
-                "row centre stays inside the bezel circle");
+                "row center stays inside the bezel circle");
         }
     }
     return true;
@@ -408,7 +408,7 @@ function testSafeAreaPlacesPartialFields(logger as Logger) as Boolean {
     Test.assertMessage(middle.halfAt(45) > bottom.halfAt(45),
         "a middle field is wider than a bottom field at the same local row");
     Test.assertMessage(top.halfAt(85) > top.halfAt(5),
-        "a top field widens as it approaches the screen centre");
+        "a top field widens as it approaches the screen center");
     Test.assertMessage(bottom.halfAt(5) > bottom.halfAt(85),
         "a bottom field narrows as it approaches the screen bottom");
     return true;
@@ -1274,7 +1274,7 @@ function testLapPagingOnlyRespondsToTheButtonNotAutoLaps(logger as Logger) as Bo
 
 // The fenix 7 tier has no LapInfoType at all, so onTimerLap() cannot tell a
 // button press from an auto-lap - it always treats the lap as manual, which is
-// the same behaviour this app had everywhere before the distinction existed.
+// the same behavior this app had everywhere before the distinction existed.
 (:test)
 function testLapPagingTreatsEveryLapAsManualWithoutLapInfoType(logger as Logger) as Boolean {
     gSkipFitRecording = true;
@@ -1415,7 +1415,7 @@ function testSunPathArcIsADomeNotAStub(logger as Logger) as Boolean {
     // horizon while every assertion above still passed, because the fault was in
     // folding the bearings rather than in measuring them: a day sweeps about 190
     // degrees, and folding each one to within 180 of a single reference sent the
-    // whole afternoon a turn backwards. The walked series has to come out
+    // whole afternoon a turn backward. The walked series has to come out
     // strictly increasing across every lit sample.
     var walk = view.azWalkForTest();
     var prev = -9999;
@@ -1526,7 +1526,7 @@ function testRoundedElevationRoundsAwayFromZero(logger as Logger) as Boolean {
     Test.assertMessage(FitRecorder.roundedElevation(2.3) == 2,
         "2.3 must round down to 2, got " + FitRecorder.roundedElevation(2.3).format("%d"));
 
-    // The case a plain "+0.5, then truncate" gets backwards: toNumber() cuts
+    // The case a plain "+0.5, then truncate" gets backward: toNumber() cuts
     // toward zero, so -2.7 + 0.5 = -2.2 truncates to -2 - one degree short of
     // the -3 that -2.7 actually rounds to.
     Test.assertMessage(FitRecorder.roundedElevation(-2.7) == -3,
@@ -1858,7 +1858,7 @@ function testSunElevationMatchesTheRealActivity(logger as Logger) as Boolean {
     logger.debug("elevation " + start.format("%.2f") + " -> " + end.format("%.2f") + " degrees");
     Test.assertMessage((start - 63.4).abs() < 0.5, "sun was 63.4 degrees up at the start");
     Test.assertMessage((end - 64.9).abs() < 0.5, "and 64.9 degrees up forty minutes later");
-    Test.assertMessage(end > start, "the walk was still climbing towards solar noon");
+    Test.assertMessage(end > start, "the walk was still climbing toward solar noon");
     return true;
 }
 
@@ -2175,7 +2175,7 @@ function testMeasuredBonusOverridesLearned(logger as Logger) as Boolean {
 //
 // Sun Bonus needs far more varied light than one ordinary activity holds, so
 // its evidence is pooled across activities as a fixed-effects fit: each
-// activity's intervals are centred on that activity's own means before they
+// activity's intervals are centered on that activity's own means before they
 // are combined, so differences in baseline drain between activities (GPS mode,
 // backlight, heat) can never be mistaken for the effect of the sun.
 

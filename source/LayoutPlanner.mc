@@ -36,7 +36,7 @@ class LayoutPlanner {
         // The chart earns a little over two fifths of the field.
         //
         // At a third it was a strip: the ring and the hero took the screen and the
-        // actual visualisation was a sliver pinned between them, which is exactly
+        // actual visualization was a sliver pinned between them, which is exactly
         // what made the pages read as a number with a decoration rather than as a
         // chart with a headline. This is the largest share the hero can give up
         // before its font has to step down.

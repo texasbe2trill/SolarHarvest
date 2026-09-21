@@ -24,7 +24,7 @@ Two fit_tool quirks to know about if this needs extending later:
     actually touched, not the whole file (resetting it everywhere separately
     corrupts nothing, but it is is unnecessary and worth avoiding).
   * `DeveloperField.get_values()` applies the field's scale/offset even when
-    the FIT wire format is signalling "not set" (encoded as the sentinel
+    the FIT wire format is signaling "not set" (encoded as the sentinel
     255/127) - it reads those two bytes as literal numbers instead. This
     project's fields never declare a scale/offset, so reading a developer
     field back for further computation must use `.encoded_values[0]`, not

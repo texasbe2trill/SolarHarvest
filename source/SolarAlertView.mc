@@ -31,7 +31,7 @@ class SolarAlertView extends WatchUi.DataFieldAlert {
 
         // A rim rather than a full flood: on a reflective display a saturated
         // full-screen fill costs contrast everywhere it touches text, and the
-        // colour only has to be seen, not stared at.
+        // color only has to be seen, not stared at.
         //
         // Drawn as a ring because the screen is one. The first version banded the
         // top and bottom edges, which on a round lens is where there are almost no
@@ -98,7 +98,7 @@ class SolarAlertView extends WatchUi.DataFieldAlert {
             return;
         }
         if (_kind == SolarAlerts.KIND_SHADE) {
-            // A sun with a bite taken out of it, in the background colour, so the
+            // A sun with a bite taken out of it, in the background color, so the
             // obstruction reads as something in front of the sun rather than as a
             // differently shaped sun.
             dc.fillCircle(cx, cy, r);
@@ -119,7 +119,7 @@ class SolarAlertView extends WatchUi.DataFieldAlert {
             dc.drawLine(sx, sy, ex, ey);
         }
         if (_kind == SolarAlerts.KIND_SUNSET) {
-            // The horizon is painted in the background colour and then re-drawn as
+            // The horizon is painted in the background color and then re-drawn as
             // a line, so the sun is cut off by it rather than sitting on top.
             dc.setColor(_palette.bg, Graphics.COLOR_TRANSPARENT);
             dc.fillRectangle(cx - (r * 2), cy + (r / 2), r * 4, r * 2);

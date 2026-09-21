@@ -2,7 +2,7 @@
 
 docs/store/icon-500.png            500 x 500, no text, a real ground, clear of the edge
 docs/store/device-icon-128-*.png   128 x 128 in each screen palette, for the app store on
-                                   the watch: 64 colours for every watch this field ships to,
+                                   the watch: 64 colors for every watch this field ships to,
                                    16, 8 and 2 for any other slot the dashboard shows
 
 The picture is the field's own: the sun low on its day arc, solid where it has
@@ -121,7 +121,7 @@ PALETTES = {
 
 
 def simple_art(sky, ground, ink, sun, lit, dim):
-    """The same picture in flat colours for the small palettes: a thick arc,
+    """The same picture in flat colors for the small palettes: a thick arc,
     the sun, the horizon and three cells, drawn at 4x for clean edges."""
     img = Image.new('RGB', (SIZE, SIZE), sky)
     d = ImageDraw.Draw(img)
@@ -160,10 +160,10 @@ def device_icons(big):
         '2colors': simple_art((0, 0, 0), (0, 0, 0), (255, 255, 255), (255, 255, 255), (255, 255, 255), (0, 0, 0)),
     }
     written = []
-    for name, colours in PALETTES.items():
+    for name, colors in PALETTES.items():
         icon = small if name == '64colors' else flat[name].resize((128, 128), Image.LANCZOS)
         pal = Image.new('P', (1, 1))
-        flat_pal = [c for rgb in colours for c in rgb]
+        flat_pal = [c for rgb in colors for c in rgb]
         pal.putpalette(flat_pal + [0] * (768 - len(flat_pal)))
         dither = Image.Dither.FLOYDSTEINBERG if name == '64colors' else Image.Dither.NONE
         out = icon.quantize(palette=pal, dither=dither).convert('RGB')

@@ -1,6 +1,6 @@
 import Toybox.Lang;
 
-// Battery behaviour measured from the watch's own reported level.
+// Battery behavior measured from the watch's own reported level.
 //
 // The reported level is quantised (typically whole percent) and it dithers
 // across the quantisation boundary. Accumulating every downward tick therefore
@@ -66,7 +66,7 @@ class BatteryModel {
     // a minute on a fenix 9 Pro Solar, by about a minute of battery life,
     // thirty times finer than the whole percent (recorded on the dev branch,
     // see docs/experiments/battery-gauge.md). Whether it is a reading of the
-    // charge or a countdown from a modelled rate is not yet known, so it is
+    // charge or a countdown from a modeled rate is not yet known, so it is
     // fitted the same way the percent steps are, in windows of active time
     // against the light in them, and quoted only past the same evidence
     // gates: a countdown does not follow the light and never passes them.

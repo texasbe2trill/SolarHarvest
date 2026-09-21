@@ -97,7 +97,7 @@ module SolarGeometry {
         // atan2 rather than acos: the arccosine form loses the east-west sign and
         // needs it patched back on from the hour angle, which is exactly the sort
         // of correction that is wrong for half the day and nobody notices.
-        // Measured from due south, positive towards west.
+        // Measured from due south, positive toward west.
         var fromSouth = Math.atan2(Math.sin(hourAngle),
             (Math.cos(hourAngle) * Math.sin(latRad)) - (Math.tan(decl) * Math.cos(latRad)));
         var bearing = (fromSouth * (180.0 / Math.PI)) + 180.0;

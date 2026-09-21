@@ -227,6 +227,7 @@ def save(out, frames, durations, size, limit):
             assert int(np.abs(got - want).max()) == 0, 'frame %d reads back differently' % i
     nbytes = out.stat().st_size
     if nbytes >= limit:
+        out.unlink()      # a file over its limit is not left where it could be uploaded
         raise SystemExit('%s is %d bytes: the limit is %d' % (out.name, nbytes, limit))
     print('%s  %dx%d  %d frames  %.1f s a loop  %d bytes (%.0f KB)' % (
         out.relative_to(ROOT), size[0], size[1], len(frames), sum(durations) / 1000.0, nbytes, nbytes / 1024.0))

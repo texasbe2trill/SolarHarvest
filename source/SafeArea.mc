@@ -100,7 +100,7 @@ class SafeArea {
     // rather than a single line.
     //
     // Measuring at one edge is what let the widest hero on the field run into the
-    // ring at both ends: a box sitting above centre is widest at its bottom, and
+    // ring at both ends: a box sitting above center is widest at its bottom, and
     // sizing the text to that gives it room the row it is actually drawn on does
     // not have. Chord width falls away monotonically from the middle, so the
     // narrower of the two ends is the whole answer.
@@ -110,7 +110,7 @@ class SafeArea {
         return (a < b) ? a : b;
     }
 
-    // Screen centre expressed in field coordinates, so a bezel ring is concentric
+    // Screen center expressed in field coordinates, so a bezel ring is concentric
     // with the watch face rather than with the data field rectangle.
     function ringCenterX() as Number { return _screenCx - _fieldX; }
     function ringCenterY() as Number { return _screenCy - _fieldY; }

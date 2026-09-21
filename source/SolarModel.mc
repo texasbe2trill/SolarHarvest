@@ -477,7 +477,7 @@ class SolarModel {
     // single-activity rules, so the least evidence that could have produced it
     // is known exactly: eleven degrees of freedom and the minimum light
     // variation. Carried forward at that weight it keeps the number the user
-    // already had, and anything measured afterwards outweighs it rather than
+    // already had, and anything measured afterward outweighs it rather than
     // being outweighed. The light range was not kept; any 25 point span passes
     // the one gate the range is used for, just as the original did. Its drain
     // is not carried at all, because the hours behind it were never recorded.
